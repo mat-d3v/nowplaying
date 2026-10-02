@@ -1,0 +1,27 @@
+services:
+  nowplaying:
+    image: nginx:alpine
+    container_name: nowplaying
+    ports:
+      - "8080:80"
+    volumes:
+      - ./index.html:/usr/share/nginx/html/index.html:ro
+      - ./hires.svg:/usr/share/nginx/html/hires.svg:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+
+  mpd-bridge:
+    image: python:3.11-slim
+    container_name: mpd-bridge
+    ports:
+      - "8766:8766"
+    volumes:
+      - ./mpd-bridge.py:/app/mpd-bridge.py:ro
+    working_dir: /app
+    command: bash -c "pip install python-mpd2 requests -q && python mpd-bridge.py"
+    environment:
+      - LASTFM_API_KEY=your_lastfm_api_key_here
+      - MPD_HOST=host.docker.internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

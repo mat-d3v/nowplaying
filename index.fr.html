@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="google" content="notranslate">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="application-name" content="Now Playing">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Now Playing">
+  <meta name="theme-color" content="#0a0a0a">
+  <link rel="apple-touch-icon" href="/touch-icon-v2.png">
+  <title>Now Playing</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+      background: #0a0a0a;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      will-change: background;
+    }
+
+    #bg-a, #bg-b {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      transition: opacity 2.5s ease;
+      will-change: opacity;
+    }
+    #bg-a { opacity: 1; }
+    #bg-b { opacity: 0; }
+
+    #vignette {
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,0.65) 100%);
+      z-index: 1;
+      pointer-events: none;
+      transition: background 1.5s ease;
+    }
+
+    #vignette.paused {
+      background: radial-gradient(ellipse at center, transparent 20%, rgba(0,0,0,0.82) 100%);
+    }
+
+    #text-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      background: linear-gradient(to right, transparent 25%, rgba(0,0,0,0.35) 50%, rgba(0,0,0,0.45) 100%);
+      pointer-events: none;
+    }
+
+    #clock {
+      position: fixed;
+      top: 32px;
+      right: 40px;
+      z-index: 3;
+      color: rgba(255,255,255,0.4);
+      font-size: 22px;
+      font-weight: 300;
+      letter-spacing: 2px;
+      font-variant-numeric: tabular-nums;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+    }
+
+    #content {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      gap: 60px;
+      padding: 60px;
+      width: 100%;
+      max-width: 1400px;
+      transition: opacity 1s ease;
+      will-change: opacity;
+    }
+
+    #content.paused { opacity: 0.7; }
+
+    #artwork-container { flex-shrink: 0; position: relative; }
+
+    #artwork-prev {
+      position: absolute;
+      inset: 0;
+      width: 380px;
+      height: 380px;
+      border-radius: 16px;
+      object-fit: cover;
+      opacity: 0;
+      transition: opacity 0.8s ease;
+      will-change: opacity;
+    }
+
+    #artwork {
+      width: 380px;
+      height: 380px;
+      border-radius: 16px;
+      object-fit: cover;
+      box-shadow: 0 30px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.08);
+      transition: opacity 0.8s ease, transform 0.8s ease;
+      will-change: opacity, transform;
+      background: rgba(255,255,255,0.05);
+    }
+
+    #artwork.loading { opacity: 0; transform: scale(0.97); }
+
+    #artwork-fallback {
+      display: none;
+      width: 380px;
+      height: 380px;
+      border-radius: 16px;
+      box-shadow: 0 30px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.08);
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 12px;
+      background: rgba(255,255,255,0.04);
+    }
+
+    #artwork-fallback.visible { display: flex; }
+
+    #artwork-fallback svg { opacity: 0.3; }
+
+    #artwork-fallback span {
+      color: rgba(255,255,255,0.2);
+      font-size: 13px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    #info { flex: 1; color: white; min-width: 0; }
+
+    .marquee-wrap { overflow: hidden; white-space: nowrap; }
+    .marquee-text { display: inline-block; white-space: nowrap; }
+    .marquee-text.scrolling { animation: marquee 14s linear infinite; }
+
+    @keyframes marquee {
+      0%, 15%  { transform: translateX(0); }
+      75%, 100% { transform: translateX(var(--sd, -200px)); }
+    }
+
+    #title {
+      font-size: 52px; font-weight: 700; letter-spacing: -1px;
+      line-height: 1.1; margin-bottom: 12px;
+    }
+
+    #artist {
+      font-size: 30px; font-weight: 500; opacity: 0.9;
+      margin-bottom: 8px;
+    }
+
+    #album {
+      font-size: 20px; opacity: 0.75;
+      margin-bottom: 16px;
+    }
+
+    #audio-info {
+      display: flex; gap: 8px; align-items: center;
+      margin-bottom: 36px; flex-wrap: wrap;
+    }
+
+    .badge {
+      font-size: 13px; padding: 4px 12px; border-radius: 20px;
+      font-weight: 600; letter-spacing: 0.5px;
+    }
+
+    .badge-format {
+      background: rgba(0,0,0,0.6); color: white;
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+
+    .badge-quality {
+      background: rgba(0,0,0,0.5); color: rgba(255,255,255,0.9);
+      font-weight: 400; border: 1px solid rgba(255,255,255,0.15);
+    }
+
+    #hires-badge { display: none; }
+    #hires-badge.visible { display: inline-flex; align-items: center; }
+    #hires-badge img { height: 28px; width: auto; }
+
+    #progress-bar {
+      width: 100%; height: 5px; background: rgba(255,255,255,0.2);
+      border-radius: 3px; overflow: hidden; margin-bottom: 12px;
+    }
+
+    #progress-fill {
+      height: 100%; border-radius: 3px; background: white;
+      transition: width 250ms linear;
+      will-change: width;
+    }
+
+    #times {
+      display: flex; justify-content: space-between;
+      font-size: 16px; opacity: 0.7; font-variant-numeric: tabular-nums;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+    }
+
+    #status {
+      display: flex; align-items: center; gap: 10px; margin-top: 30px;
+      font-size: 16px; opacity: 0.7; text-transform: uppercase; letter-spacing: 1px;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.9);
+    }
+
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #4ade80; animation: pulse 2s infinite;
+      will-change: opacity, transform;
+    }
+
+    .dot.paused { background: rgba(255,255,255,0.4); animation: none; }
+    .dot.offline { background: #f87171; animation: none; }
+
+    #offline-badge {
+      position: fixed;
+      top: 32px;
+      left: 40px;
+      z-index: 3;
+      display: none;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 20px;
+      background: rgba(248,113,113,0.12);
+      border: 1px solid rgba(248,113,113,0.35);
+      color: #fca5a5;
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+    }
+
+    #offline-badge.visible { display: flex; }
+
+    #offline-badge .offline-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #f87171;
+      animation: pulse 2s infinite;
+    }
+
+    #next-track {
+      display: none;
+      margin-top: 14px;
+      font-size: 16px;
+      color: rgba(255,255,255,0.45);
+      text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    #next-track .next-label {
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: 1.5px;
+      opacity: 0.7;
+      margin-right: 8px;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.8); }
+    }
+
+    #nothing {
+      position: relative; z-index: 2;
+      color: rgba(255,255,255,0.3); font-size: 24px; text-align: center;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+    }
+
+    #nothing span { display: block; font-size: 14px; margin-top: 8px; opacity: 0.5; }
+
+    /* ===== Portrait (téléphone) : pochette centrée en haut, infos en dessous ===== */
+    @media (max-width: 700px) {
+      #content {
+        flex-direction: column;
+        align-items: center;
+        gap: 28px;
+        padding: 28px;
+      }
+
+      #artwork,
+      #artwork-prev,
+      #artwork-fallback {
+        width: clamp(180px, 62vw, 320px);
+        height: clamp(180px, 62vw, 320px);
+      }
+
+      #info {
+        flex: none;
+        width: 100%;
+        text-align: center;
+      }
+
+      #title { font-size: clamp(24px, 7vw, 34px); margin-bottom: 8px; }
+      #artist { font-size: clamp(16px, 4.5vw, 21px); margin-bottom: 6px; }
+      #album { font-size: clamp(13px, 3.5vw, 16px); margin-bottom: 14px; }
+
+      #audio-info { justify-content: center; margin-bottom: 24px; }
+      #status { justify-content: center; margin-top: 20px; }
+      #next-track { text-align: center; }
+
+      #clock { display: none; }
+      #offline-badge { top: 18px; left: 20px; font-size: 11px; padding: 5px 12px; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="bg-a"></div>
+<div id="bg-b"></div>
+<div id="vignette"></div>
+<div id="text-overlay"></div>
+<div id="clock"></div>
+<div id="offline-badge"><span class="offline-dot"></span>Hors ligne</div>
+
+<div id="content" style="display:none">
+  <div id="artwork-container">
+    <img id="artwork-prev" src="" alt="" crossorigin="anonymous">
+    <img id="artwork" src="" alt="" crossorigin="anonymous">
+    <div id="artwork-fallback">
+      <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <circle cx="12" cy="12" r="3"/>
+        <line x1="12" y1="2" x2="12" y2="5"/>
+        <line x1="12" y1="19" x2="12" y2="22"/>
+        <line x1="2" y1="12" x2="5" y2="12"/>
+        <line x1="19" y1="12" x2="22" y2="12"/>
+      </svg>
+      <span>Aucune pochette</span>
+    </div>
+  </div>
+  <div id="info">
+    <div class="marquee-wrap"><div id="title" class="marquee-text">—</div></div>
+    <div class="marquee-wrap"><div id="artist" class="marquee-text">—</div></div>
+    <div class="marquee-wrap"><div id="album" class="marquee-text">—</div></div>
+    <div id="audio-info">
+      <span id="badge-format" class="badge badge-format" style="display:none"></span>
+      <span id="badge-quality" class="badge badge-quality" style="display:none"></span>
+      <span id="hires-badge">
+        <img src="/hires.svg" alt="Hi-Res">
+      </span>
+    </div>
+    <div id="progress-bar"><div id="progress-fill" style="width:0%"></div></div>
+    <div id="times">
+      <span id="current-time">0:00</span>
+      <span id="total-time">0:00</span>
+    </div>
+    <div id="status">
+      <div class="dot" id="dot"></div>
+      <span id="status-text">En attente</span>
+    </div>
+    <div id="next-track"><span class="next-label">À suivre</span><span id="next-track-text"></span></div>
+  </div>
+</div>
+
+<div id="nothing">
+  Aucune lecture en cours
+  <span>En attente de lecture...</span>
+</div>
+
+<script>
+  let currentTrackId = null;
+  let bgActive = 'a';
+  let playback = null;   // {elapsed, duration, playing, at} : état du dernier poll
+  let failCount = 0;
+  let offline = false;
+
+  const FALLBACK_GRADIENTS = [
+    'radial-gradient(ellipse at 25% 60%, #1a1a2e 0%, transparent 55%), radial-gradient(ellipse at 75% 35%, #16213e 0%, transparent 55%), #0a0a0a',
+    'radial-gradient(ellipse at 25% 60%, #2d1b69 0%, transparent 55%), radial-gradient(ellipse at 75% 35%, #11998e 0%, transparent 55%), #0a0a0a',
+    'radial-gradient(ellipse at 25% 60%, #4a1942 0%, transparent 55%), radial-gradient(ellipse at 75% 35%, #c94b4b 0%, transparent 55%), #0a0a0a',
+    'radial-gradient(ellipse at 25% 60%, #134e5e 0%, transparent 55%), radial-gradient(ellipse at 75% 35%, #71b280 0%, transparent 55%), #0a0a0a',
+    'radial-gradient(ellipse at 25% 60%, #3a1c71 0%, transparent 55%), radial-gradient(ellipse at 75% 35%, #d76d77 0%, transparent 55%), #0a0a0a',
+  ];
+
+  function getFallbackGradient(artist) {
+    const idx = artist ? artist.charCodeAt(0) % FALLBACK_GRADIENTS.length : 0;
+    return FALLBACK_GRADIENTS[idx];
+  }
+
+  function formatTime(s) {
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return m + ':' + (sec < 10 ? '0' : '') + sec;
+  }
+
+  function updateClock() {
+    const now = new Date();
+    document.getElementById('clock').textContent =
+      String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+  }
+  updateClock();
+  setInterval(updateClock, 10000);
+
+  function setupMarquee(el) {
+    el.classList.remove('scrolling');
+    el.style.removeProperty('--sd');
+    requestAnimationFrame(() => {
+      const overflow = el.scrollWidth - el.parentElement.clientWidth;
+      if (overflow > 10) {
+        el.style.setProperty('--sd', `-${overflow + 40}px`);
+        el.classList.add('scrolling');
+      }
+    });
+  }
+
+  function applyBackground(gradient, gradientWide) {
+    const next = bgActive === 'a' ? 'b' : 'a';
+    const curr = bgActive;
+    const el = document.getElementById(`bg-${next}`);
+    el.style.background = gradient;
+    // Si le navigateur comprend color(display-p3 ...), cette 2e affectation
+    // remplace la précédente ; sinon elle est silencieusement rejetée par le
+    // parseur CSS et la version sRGB déjà posée ci-dessus reste active.
+    if (gradientWide) el.style.background = gradientWide;
+    requestAnimationFrame(() => {
+      document.getElementById(`bg-${next}`).style.opacity = '1';
+      document.getElementById(`bg-${curr}`).style.opacity = '0';
+      bgActive = next;
+    });
+  }
+
+  function applyColors(img) {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 50; canvas.height = 50;
+
+      // Contexte P3 si disponible (Safari récent sur iPhone/iPad/Mac) : les
+      // couleurs de la pochette ne sont plus écrêtées au gamut sRGB.
+      let ctx = null, isP3 = false;
+      try {
+        ctx = canvas.getContext('2d', { colorSpace: 'display-p3' });
+        isP3 = !!(ctx && ctx.getContextAttributes && ctx.getContextAttributes().colorSpace === 'display-p3');
+      } catch (e) {}
+      if (!ctx) ctx = canvas.getContext('2d');
+
+      ctx.drawImage(img, 0, 0, 50, 50);
+      const d = ctx.getImageData(0, 0, 50, 50).data;
+      let r1=0,g1=0,b1=0, r2=0,g2=0,b2=0, r3=0,g3=0,b3=0, n=0;
+      for (let i=0; i<d.length; i+=4) {
+        const x=(i/4)%50, y=Math.floor((i/4)/50);
+        if(x<25&&y<25)       {r1+=d[i];g1+=d[i+1];b1+=d[i+2];n++;}
+        else if(x>=25&&y<25) {r2+=d[i];g2+=d[i+1];b2+=d[i+2];}
+        else                 {r3+=d[i];g3+=d[i+1];b3+=d[i+2];}
+      }
+      const s = v => Math.min(255, Math.floor(v/n*1.4));
+      r1=s(r1);g1=s(g1);b1=s(b1);
+      r2=s(r2);g2=s(g2);b2=s(b2);
+      r3=s(r3);g3=s(g3);b3=s(b3);
+
+      const srgb = `
+        radial-gradient(ellipse at 25% 60%, rgb(${r1},${g1},${b1}) 0%, transparent 55%),
+        radial-gradient(ellipse at 75% 35%, rgb(${r2},${g2},${b2}) 0%, transparent 55%),
+        radial-gradient(ellipse at 50% 90%, rgb(${r3},${g3},${b3}) 0%, transparent 50%),
+        #0a0a0a`;
+
+      let wide = null;
+      if (isP3) {
+        const f = v => (v / 255).toFixed(4);
+        wide = `
+          radial-gradient(ellipse at 25% 60%, color(display-p3 ${f(r1)} ${f(g1)} ${f(b1)}) 0%, transparent 55%),
+          radial-gradient(ellipse at 75% 35%, color(display-p3 ${f(r2)} ${f(g2)} ${f(b2)}) 0%, transparent 55%),
+          radial-gradient(ellipse at 50% 90%, color(display-p3 ${f(r3)} ${f(g3)} ${f(b3)}) 0%, transparent 50%),
+          #0a0a0a`;
+      }
+
+      applyBackground(srgb, wide);
+    } catch(e) {
+      applyBackground('#0a0a0a');
+    }
+  }
+
+  function loadArtwork(artUrl, artist) {
+    const artworkEl  = document.getElementById('artwork');
+    const prevEl     = document.getElementById('artwork-prev');
+    const fallbackEl = document.getElementById('artwork-fallback');
+
+    prevEl.src = artworkEl.src;
+    prevEl.style.opacity = '1';
+    artworkEl.classList.add('loading');
+
+    if (!artUrl) {
+      artworkEl.src = '';
+      artworkEl.style.display = 'none';
+      artworkEl.classList.remove('loading');
+      prevEl.style.opacity = '0';
+      fallbackEl.className = 'visible';
+      applyBackground(getFallbackGradient(artist));
+      return;
+    }
+
+    artworkEl.style.display = 'block';
+    fallbackEl.className = '';
+
+    artworkEl.onload = function() {
+      artworkEl.classList.remove('loading');
+      prevEl.style.opacity = '0';
+      setTimeout(() => applyColors(artworkEl), 100);
+    };
+
+    artworkEl.onerror = function() {
+      artworkEl.style.display = 'none';
+      artworkEl.classList.remove('loading');
+      prevEl.style.opacity = '0';
+      fallbackEl.className = 'visible';
+      applyBackground(getFallbackGradient(artist));
+    };
+
+    artworkEl.src = artUrl;
+  }
+
+  function updateAudioBadges(format) {
+    const fmtEl   = document.getElementById('badge-format');
+    const qualEl  = document.getElementById('badge-quality');
+    const hiresEl = document.getElementById('hires-badge');
+
+    if (!format) {
+      fmtEl.style.display  = 'none';
+      qualEl.style.display = 'none';
+      hiresEl.className    = '';
+      return;
+    }
+
+    const parts   = format.split(':');
+    const rate    = parseInt(parts[0]) || 0;
+    const bits    = parseInt(parts[1]) || 0;
+    const isHiRes = rate >= 88200 || bits >= 24;
+    const khz     = rate >= 1000 ? (rate / 1000).toFixed(1) + ' kHz' : '';
+
+    fmtEl.textContent    = 'FLAC';
+    fmtEl.style.display  = 'inline-block';
+    qualEl.textContent   = bits && khz ? `${bits}bit / ${khz}` : (khz || '');
+    qualEl.style.display = qualEl.textContent ? 'inline-block' : 'none';
+    hiresEl.className    = isHiRes ? 'visible' : '';
+  }
+
+  async function poll() {
+    try {
+      const MPD_ENDPOINT = window.MPD_ENDPOINT || "/now";
+      // Timeout < intervalle de poll (2 s) : les requêtes ne peuvent pas s'empiler
+      const res = await fetch(MPD_ENDPOINT, {
+        cache: 'no-store',
+        signal: AbortSignal.timeout ? AbortSignal.timeout(1500) : undefined
+      });
+      if (!res.ok) throw new Error('fetch failed');
+      const d = await res.json();
+
+      const isPlaying = d.state === 'play';
+      const isPaused  = d.state === 'pause';
+
+      if (d.state === 'stop' || (!d.title || d.title === '—')) {
+        document.getElementById('content').style.display = 'none';
+        document.getElementById('nothing').style.display = 'block';
+        return;
+      }
+
+      document.getElementById('content').style.display = 'flex';
+      document.getElementById('nothing').style.display = 'none';
+
+      document.getElementById('dot').className           = 'dot' + (isPlaying ? '' : ' paused');
+      document.getElementById('content').className       = isPaused ? 'paused' : '';
+      document.getElementById('vignette').className      = isPaused ? 'paused' : '';
+      document.getElementById('status-text').textContent = isPlaying ? 'En lecture' : 'En pause';
+      document.getElementById('total-time').textContent   = formatTime(d.duration);
+
+      // Le ticker (tick) interpole elapsed entre deux polls pour une progression fluide
+      playback = { elapsed: d.elapsed, duration: d.duration, playing: isPlaying, at: performance.now() };
+      tick();
+
+      const nextEl = document.getElementById('next-track');
+      if (d.next_title) {
+        document.getElementById('next-track-text').textContent =
+          d.next_title + (d.next_artist ? ' — ' + d.next_artist : '');
+        nextEl.style.display = 'block';
+      } else {
+        nextEl.style.display = 'none';
+      }
+
+      const trackKey = `${d.title}|${d.artist}|${d.album}`;
+      if (trackKey !== currentTrackId) {
+        currentTrackId = trackKey;
+        setTimeout(() => {
+          document.getElementById('title').textContent  = d.title  || '—';
+          document.getElementById('artist').textContent = d.artist || '—';
+          document.getElementById('album').textContent  = d.album  || '';
+          setTimeout(() => {
+            setupMarquee(document.getElementById('title'));
+            setupMarquee(document.getElementById('artist'));
+            setupMarquee(document.getElementById('album'));
+          }, 200);
+          updateAudioBadges(d.format);
+          loadArtwork(d.art_url || '', d.artist);
+        }, 300);
+      }
+      failCount = 0;
+      if (offline) setOffline(false);
+    } catch(e) {
+      console.error('MPD poll error:', e);
+      failCount++;
+      if (failCount >= 3 && !offline) setOffline(true);
+    }
+  }
+
+  function setOffline(v) {
+    offline = v;
+    document.getElementById('offline-badge').classList.toggle('visible', v);
+    if (v) {
+      document.getElementById('dot').className = 'dot offline';
+      document.getElementById('status-text').textContent = 'Hors ligne';
+      if (playback) playback.playing = false; // gèle la progression interpolée
+    }
+  }
+
+  // Progression fluide : interpole le temps écoulé entre deux polls (toutes les 250 ms)
+  function tick() {
+    if (!playback) return;
+    let e = playback.elapsed;
+    if (playback.playing) e += (performance.now() - playback.at) / 1000;
+    if (playback.duration > 0) e = Math.min(e, playback.duration);
+    document.getElementById('current-time').textContent = formatTime(e);
+    document.getElementById('progress-fill').style.width =
+      playback.duration > 0 ? (e / playback.duration * 100).toFixed(2) + '%' : '0%';
+  }
+  setInterval(tick, 250);
+
+  // Wake Lock : empêche l'écran de se mettre en veille (contexte sécurisé requis,
+  // sans effet sinon, sans danger sur les navigateurs non compatibles)
+  let wakeLock = null;
+  async function requestWakeLock() {
+    if (!('wakeLock' in navigator)) return;
+    try { wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+  }
+  requestWakeLock();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') requestWakeLock();
+  });
+
+  // Rechargement silencieux périodique : cette page reste ouverte en
+  // continu comme un écran kiosque, sans navigation manuelle. Sans ce
+  // reload, un onglet déjà ouvert ne reprendrait jamais une mise à jour
+  // déployée côté serveur.
+  setTimeout(() => location.reload(), 6 * 60 * 60 * 1000);
+
+  poll();
+  setInterval(poll, 2000);
+</script>
+</body>
+</html>
