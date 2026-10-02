@@ -201,15 +201,49 @@ def get_art_url(artist, album):
     return ''
 
 def get_audio_format(status):
-    # ALSA gives the true hardware output format when available; otherwise
-    # fall back to mpd's own decoded format ("44100:16:2" in status).
-    fmt = get_alsa_format()
-    if fmt:
-        return fmt
+    # mpd's own "audio" field is the decoded source format ("44100:16:2",
+    # "44100:f:2" for float decoders, "dsd64:2"): that's what the badges
+    # describe. The ALSA hardware format is only a fallback, since a DAC
+    # that takes 32-bit samples would turn every CD rip into "32bit".
     audio = status.get('audio', '')
-    if re.fullmatch(r'\d+:\d+:\d+', audio):
+    if re.fullmatch(r'(\d+:(\d+|f)|dsd\d+):\d+', audio):
         return audio
-    return ''
+    return get_alsa_format()
+
+# File extension -> (badge label, lossless)
+CODECS = {
+    'flac': ('FLAC', True), 'wav': ('WAV', True), 'aif': ('AIFF', True), 'aiff': ('AIFF', True),
+    'ape': ('APE', True), 'wv': ('WavPack', True), 'dsf': ('DSF', True), 'dff': ('DFF', True),
+    'mp3': ('MP3', False), 'aac': ('AAC', False), 'ogg': ('OGG', False), 'oga': ('OGG', False),
+    'opus': ('OPUS', False), 'wma': ('WMA', False), 'mpc': ('MPC', False),
+}
+
+def get_codec(file_url, audio):
+    # Streams don't say what they carry: no badge rather than a wrong one
+    if not file_url or '://' in file_url:
+        return '', False
+    name = file_url.rsplit('/', 1)[-1]
+    if '.' not in name:
+        return '', False
+    ext = name.rsplit('.', 1)[1].lower()
+    if ext in ('m4a', 'mp4'):
+        # Same container for AAC and ALAC: mpd decodes AAC to float samples
+        # ("44100:f:2") and ALAC to integer ones ("44100:16:2")
+        if not audio:
+            return 'M4A', False
+        return ('AAC', False) if audio.split(':')[1:2] == ['f'] else ('ALAC', True)
+    return CODECS.get(ext, (ext.upper(), False))
+
+def display_title(song):
+    # Untagged files and radios without a title still get a name instead of
+    # "Nothing playing": station name, then file name, then stream host
+    title = song.get('title') or song.get('name')
+    if title:
+        return title
+    uri = song.get('file', '')
+    if '://' in uri:
+        return urllib.parse.urlparse(uri).netloc or uri
+    return os.path.splitext(uri.rsplit('/', 1)[-1])[0]
 
 def get_status():
     status = parse_mpd(mpd_command('status'))
@@ -220,6 +254,13 @@ def get_status():
     file_url = currentsong.get('file', '')
     artist = currentsong.get('artist', '')
     album = currentsong.get('album', '')
+    title = display_title(currentsong)
+    # Radios: the station name goes on the artist line when the stream sends
+    # no artist (and the name isn't already used as the title)
+    name = currentsong.get('name', '')
+    shown_artist = artist or (name if name != title else '')
+    fmt = get_audio_format(status) if state != 'stop' else ''
+    codec, lossless = get_codec(file_url, status.get('audio', ''))
     # Artwork: prefer mpd itself (embedded tags or cover file, no API key
     # needed), fall back to Last.fm for streams or when mpd has nothing.
     art_url = ''
@@ -235,16 +276,18 @@ def get_status():
     ns = status.get('nextsong')
     if ns is not None and state != 'stop':
         nxt = parse_mpd(mpd_command(f'playlistinfo {ns}'))
-        next_title = nxt.get('title', '')
+        next_title = display_title(nxt)
         next_artist = nxt.get('artist', '')
     return {
         'state': state,
-        'title': currentsong.get('title', '\u2014'),
-        'artist': artist or '\u2014',
+        'title': title,
+        'artist': shown_artist or '\u2014',
         'album': album,
         'elapsed': elapsed,
         'duration': duration,
-        'format': get_audio_format(status) if state != 'stop' else '',
+        'format': fmt,
+        'codec': codec,
+        'lossless': lossless,
         'art_url': art_url,
         'file': file_url,
         'next_title': next_title,

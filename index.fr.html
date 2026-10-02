@@ -414,6 +414,15 @@
     });
   }
 
+  // Titres longs : recalcule le défilement quand la taille de l'écran change (rotation)
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      ['title', 'artist', 'album'].forEach(id => setupMarquee(document.getElementById(id)));
+    }, 200);
+  });
+
   function applyBackground(gradient, gradientWide) {
     const next = bgActive === 'a' ? 'b' : 'a';
     const curr = bgActive;
@@ -446,17 +455,18 @@
 
       ctx.drawImage(img, 0, 0, 50, 50);
       const d = ctx.getImageData(0, 0, 50, 50).data;
-      let r1=0,g1=0,b1=0, r2=0,g2=0,b2=0, r3=0,g3=0,b3=0, n=0;
+      // Un compteur par zone : la zone du bas est deux fois plus grande que celles du haut
+      let r1=0,g1=0,b1=0,n1=0, r2=0,g2=0,b2=0,n2=0, r3=0,g3=0,b3=0,n3=0;
       for (let i=0; i<d.length; i+=4) {
         const x=(i/4)%50, y=Math.floor((i/4)/50);
-        if(x<25&&y<25)       {r1+=d[i];g1+=d[i+1];b1+=d[i+2];n++;}
-        else if(x>=25&&y<25) {r2+=d[i];g2+=d[i+1];b2+=d[i+2];}
-        else                 {r3+=d[i];g3+=d[i+1];b3+=d[i+2];}
+        if(x<25&&y<25)       {r1+=d[i];g1+=d[i+1];b1+=d[i+2];n1++;}
+        else if(x>=25&&y<25) {r2+=d[i];g2+=d[i+1];b2+=d[i+2];n2++;}
+        else                 {r3+=d[i];g3+=d[i+1];b3+=d[i+2];n3++;}
       }
-      const s = v => Math.min(255, Math.floor(v/n*1.4));
-      r1=s(r1);g1=s(g1);b1=s(b1);
-      r2=s(r2);g2=s(g2);b2=s(b2);
-      r3=s(r3);g3=s(g3);b3=s(b3);
+      const s = (v, n) => Math.min(255, Math.floor(v/n*1.4));
+      r1=s(r1,n1);g1=s(g1,n1);b1=s(b1,n1);
+      r2=s(r2,n2);g2=s(g2,n2);b2=s(b2,n2);
+      r3=s(r3,n3);g3=s(g3,n3);b3=s(b3,n3);
 
       const srgb = `
         radial-gradient(ellipse at 25% 60%, rgb(${r1},${g1},${b1}) 0%, transparent 55%),
@@ -519,28 +529,32 @@
     artworkEl.src = artUrl;
   }
 
-  function updateAudioBadges(format) {
+  function updateAudioBadges(d) {
     const fmtEl   = document.getElementById('badge-format');
     const qualEl  = document.getElementById('badge-quality');
     const hiresEl = document.getElementById('hires-badge');
 
-    if (!format) {
-      fmtEl.style.display  = 'none';
-      qualEl.style.display = 'none';
-      hiresEl.className    = '';
-      return;
+    // Codec d'après l'extension du fichier ; vide pour les streams (inconnu)
+    fmtEl.textContent   = d.codec || '';
+    fmtEl.style.display = d.codec ? 'inline-block' : 'none';
+
+    const parts = (d.format || '').split(':');
+    const dsd   = /^dsd(\d+)$/i.exec(parts[0]);
+    let quality = '', isHiRes = false;
+    if (dsd) {
+      quality = 'DSD' + dsd[1];
+      isHiRes = true;
+    } else if (d.format) {
+      const rate = parseInt(parts[0]) || 0;
+      // La profondeur de bits n'a de sens que pour un fichier sans perte : les
+      // décodeurs lossy sortent du 24 bits ou du flottant quelle que soit la source
+      const bits = d.lossless ? (parseInt(parts[1]) || 0) : 0;
+      const khz  = rate >= 1000 ? (rate / 1000).toFixed(1) + ' kHz' : '';
+      quality = bits && khz ? `${bits}bit / ${khz}` : khz;
+      isHiRes = !!d.lossless && (rate >= 88200 || bits >= 24);
     }
-
-    const parts   = format.split(':');
-    const rate    = parseInt(parts[0]) || 0;
-    const bits    = parseInt(parts[1]) || 0;
-    const isHiRes = rate >= 88200 || bits >= 24;
-    const khz     = rate >= 1000 ? (rate / 1000).toFixed(1) + ' kHz' : '';
-
-    fmtEl.textContent    = 'FLAC';
-    fmtEl.style.display  = 'inline-block';
-    qualEl.textContent   = bits && khz ? `${bits}bit / ${khz}` : (khz || '');
-    qualEl.style.display = qualEl.textContent ? 'inline-block' : 'none';
+    qualEl.textContent   = quality;
+    qualEl.style.display = quality ? 'inline-block' : 'none';
     hiresEl.className    = isHiRes ? 'visible' : '';
   }
 
@@ -558,7 +572,7 @@
       const isPlaying = d.state === 'play';
       const isPaused  = d.state === 'pause';
 
-      if (d.state === 'stop' || (!d.title || d.title === '—')) {
+      if (d.state === 'stop' || !d.title) {
         document.getElementById('content').style.display = 'none';
         document.getElementById('nothing').style.display = 'block';
         return;
@@ -598,9 +612,12 @@
             setupMarquee(document.getElementById('artist'));
             setupMarquee(document.getElementById('album'));
           }, 200);
-          updateAudioBadges(d.format);
+          updateAudioBadges(d);
           loadArtwork(d.art_url || '', d.artist);
         }, 300);
+      } else {
+        // Le format peut arriver un poll après le morceau lui-même
+        updateAudioBadges(d);
       }
       failCount = 0;
       if (offline) setOffline(false);
@@ -648,8 +665,18 @@
   // Rechargement silencieux périodique : cette page reste ouverte en
   // continu comme un écran kiosque, sans navigation manuelle. Sans ce
   // reload, un onglet déjà ouvert ne reprendrait jamais une mise à jour
-  // déployée côté serveur.
-  setTimeout(() => location.reload(), 6 * 60 * 60 * 1000);
+  // déployée côté serveur. On ne recharge que si le pont répond : sinon
+  // l'onglet resterait sur une page d'erreur du navigateur, sans plus aucun
+  // poll pour s'en sortir.
+  function reloadWhenReachable() {
+    fetch(location.href, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout ? AbortSignal.timeout(10000) : undefined
+    })
+      .then(res => { if (!res.ok) throw new Error('bridge not ready'); location.reload(); })
+      .catch(() => setTimeout(reloadWhenReachable, 60 * 1000));
+  }
+  setTimeout(reloadWhenReachable, 6 * 60 * 60 * 1000);
 
   poll();
   setInterval(poll, 2000);
