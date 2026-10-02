@@ -4,6 +4,14 @@
 
 # nowplaying
 
+<p align="center">
+  <a href="https://cdn.jsdelivr.net/gh/mat-d3v/nowplaying@main/assets/nowplaying-presentation.mp4">
+    <img src="assets/presentation-poster.jpg" width="800" alt="Watch the NowPlaying presentation video">
+  </a>
+  <br>
+  <sub>▶ <a href="https://cdn.jsdelivr.net/gh/mat-d3v/nowplaying@main/assets/nowplaying-presentation.mp4">Watch the presentation video</a> (52 s, with sound)</sub>
+</p>
+
 ![Preview](screenshot.png)
 
 Fullscreen Now Playing page for MPD. Shows the current track with a dynamic background gradient pulled from the album art, audio quality badges, and Hi-Res detection.

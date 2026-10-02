@@ -4,6 +4,14 @@
 
 # nowplaying
 
+<p align="center">
+  <a href="https://cdn.jsdelivr.net/gh/mat-d3v/nowplaying@main/assets/nowplaying-presentation.mp4">
+    <img src="assets/presentation-poster.jpg" width="800" alt="Voir la vidéo de présentation de NowPlaying">
+  </a>
+  <br>
+  <sub>▶ <a href="https://cdn.jsdelivr.net/gh/mat-d3v/nowplaying@main/assets/nowplaying-presentation.mp4">Voir la vidéo de présentation</a> (52 s, avec le son, en anglais)</sub>
+</p>
+
 Page plein écran "En lecture" pour MPD. Affiche le titre en cours avec un dégradé de fond extrait de la pochette, des badges de qualité audio et la détection Hi-Res.
 
 Pas besoin de nginx - le bridge sert tout sur le port 8766.
