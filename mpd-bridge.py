@@ -17,7 +17,8 @@ def _load_dotenv(path):
                 key = key.strip()
                 if key.startswith('export '):
                     key = key[7:].strip()
-                os.environ.setdefault(key, value.strip().strip('"\''))
+                if key:
+                    os.environ.setdefault(key, value.strip().strip('"\''))
     except OSError:
         pass
 
