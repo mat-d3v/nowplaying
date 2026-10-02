@@ -2,10 +2,33 @@
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import socket, json, urllib.request, urllib.parse, re, os, threading
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def _load_dotenv(path):
+    # Minimal .env support (KEY=value lines, # comments). Variables already
+    # set in the environment win, so systemd/Docker settings still apply.
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#') or '=' not in line:
+                    continue
+                key, value = line.split('=', 1)
+                key = key.strip()
+                if key.startswith('export '):
+                    key = key[7:].strip()
+                os.environ.setdefault(key, value.strip().strip('"\''))
+    except OSError:
+        pass
+
+_load_dotenv(os.path.join(SCRIPT_DIR, '.env'))
+
 MPD_HOST = os.environ.get('MPD_HOST', '127.0.0.1')
 MPD_PORT = int(os.environ.get('MPD_PORT', '6600'))
 PORT = int(os.environ.get('PORT', '8766'))
-LASTFM_KEY = os.environ.get("LASTFM_API_KEY", "your_lastfm_api_key_here")
+LASTFM_KEY = os.environ.get('LASTFM_API_KEY', '')
+# Empty, or still the placeholder of older setups: no Last.fm lookups
+LASTFM_ENABLED = LASTFM_KEY not in ('', 'your_lastfm_api_key_here')
 
 _art_cache = {}
 
@@ -268,7 +291,7 @@ def get_status():
         data, _ = get_mpd_art(file_url)
         if data:
             art_url = '/art?file=' + urllib.parse.quote(file_url, safe='')
-    if not art_url and artist and album and LASTFM_KEY != 'your_lastfm_api_key_here':
+    if not art_url and artist and album and LASTFM_ENABLED:
         art_url = get_art_url(artist, album)
     # Next track in the queue (mpd exposes its position via 'nextsong')
     next_title = ''
@@ -303,8 +326,6 @@ STATIC_FILES = {
     '/apple-touch-icon.png': ('assets/apple-touch-icon.png', 'image/png'),
     '/touch-icon-v2.png': ('assets/touch-icon-v2.png', 'image/png'),
 }
-
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
