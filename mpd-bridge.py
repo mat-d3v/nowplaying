@@ -817,9 +817,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def save_display(self):
         # From the settings page. Another site's page can't post here: its
-        # browser sends its Origin, and JSON needs the bridge's leave first
+        # browser sends its Origin, and JSON needs the bridge's leave first.
+        # Host names only: a proxy in front may leave the port out of Host
         origin = self.headers.get('Origin')
-        if origin and urllib.parse.urlparse(origin).netloc != self.headers.get('Host', ''):
+        host = urllib.parse.urlparse('//' + self.headers.get('Host', '')).hostname
+        if origin and urllib.parse.urlparse(origin).hostname != host:
             self.send_json({'error': 'not from this page'}, 403)
             return
         if self.headers.get('Content-Type', '').split(';')[0].strip() != 'application/json':

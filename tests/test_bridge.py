@@ -681,6 +681,7 @@ class DisplaySettingsTest(BridgeTestCase):
         # Another site's page, in a browser on the network
         self.assertEqual(self.post(b, {'clock': '12'}, origin='http://elsewhere.example'), 403)
         self.assertEqual(self.post(b, {'clock': '12'}, origin=f'http://127.0.0.1:{b.port}'), 204)
+        self.assertEqual(self.post(b, {'clock': '12'}, origin='https://127.0.0.1'), 204)  # through a proxy
 
     def test_cannot_save(self):
         b = self.start_bridge(DATA_DIR='/nonexistent/folder')
