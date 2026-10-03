@@ -769,7 +769,7 @@
     document.getElementById('dot').className           = 'dot' + (isPlaying ? '' : ' paused');
     document.getElementById('content').className       = isPaused ? 'paused' : '';
     document.getElementById('vignette').className      = isPaused ? 'paused' : '';
-    // AirPlay: who's sending ("Playing · Mat's iPhone")
+    // AirPlay, Spotify: who's sending ("Playing · Mat's iPhone")
     document.getElementById('status-text').textContent =
       (isPlaying ? T.playing : T.paused) + (d.sender ? ' · ' + d.sender : '');
     document.getElementById('total-time').textContent   = formatTime(d.duration);

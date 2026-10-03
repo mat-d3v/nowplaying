@@ -32,6 +32,7 @@ Ni nginx ni paquet Python à installer - le pont n'utilise que la bibliothèque 
 - Radios : badge « En direct », « Artiste - Titre » séparé sur deux lignes, nom de la station en dessous
 - Les fichiers sans tags affichent leur nom de fichier
 - AirPlay : ce qui est joué depuis un iPhone, un iPad ou un Mac via shairport-sync s'affiche aussi
+- Spotify Connect : ce qui est joué depuis l'appli Spotify via raspotify (librespot) s'affiche aussi
 - Mises à jour instantanées : le pont pousse chaque changement dès qu'il a lieu (morceau, pause, avance, file d'attente)
 - Barre de progression avec temps écoulé et total, interpolée en douceur
 - Défilement automatique pour les titres longs
@@ -108,6 +109,7 @@ Les réglages viennent des variables d'environnement ou d'un fichier `.env` plac
 | TLS_CERT, TLS_KEY | vide | Certificat et clé privée (PEM) pour servir en HTTPS, voir plus bas |
 | ALSA_CARD | 0 | Carte ALSA lue pour le format audio quand mpd ne le donne pas |
 | SHAIRPORT_PIPE | /tmp/shairport-sync-metadata | Tube de métadonnées de shairport-sync, pour AirPlay ; vide, AirPlay est coupé |
+| SPOTIFY | 1 (activé) | Spotify Connect : ce que joue librespot (raspotify), d'après ses événements ; `0` désactive |
 | DEMO | vide | `1` pour le mode démo : morceaux inventés, sans mpd |
 
 ## Lancer comme service (systemd)
@@ -143,6 +145,20 @@ metadata =
 ```
 
 Le pont lit ce tube tout seul, et `--check` indique s'il le trouve. `SHAIRPORT_PIPE` change son chemin, ou coupe AirPlay s'il est vide. Un seul programme peut lire le tube. Avec Docker, décommentez sa ligne dans `docker-compose.yml`.
+
+## Spotify Connect (raspotify)
+
+Avec [raspotify](https://github.com/dtcooper/raspotify) sur la même machine, elle apparaît comme enceinte dans l'appli Spotify, et la page affiche ce qu'elle joue : titre, artiste, album, pochette, progression, et l'appareil qui pilote. Comme AirPlay, Spotify passe en premier pendant la lecture ; quand AirPlay et Spotify jouent tous les deux, c'est le dernier lancé qui s'affiche.
+
+librespot, que raspotify fait tourner, lance un programme à chaque événement (morceau suivant, lecture, pause...) : `spotify-event.py` les transmet au pont. Installez-le hors de votre dossier personnel, là où le service raspotify peut le lancer, indiquez-le dans les réglages de raspotify, puis redémarrez raspotify :
+
+```bash
+sudo install -m 755 spotify-event.py /usr/local/bin/nowplaying-spotify-event
+echo 'LIBRESPOT_ONEVENT=/usr/local/bin/nowplaying-spotify-event' | sudo tee -a /etc/raspotify/conf
+sudo systemctl restart raspotify
+```
+
+Si le pont utilise un autre port, ou HTTPS, ajoutez son adresse après le programme : `LIBRESPOT_ONEVENT="/usr/local/bin/nowplaying-spotify-event https://127.0.0.1:8766"`. Le pont n'accepte ces événements que depuis sa propre machine ; `--check` indique si raspotify lance le programme, et `SPOTIFY=0` coupe Spotify. Les détails du morceau demandent librespot 0.5 ou plus récent ; un librespot lancé autrement prend le même programme avec `--onevent`.
 
 ## HTTPS : écran allumé et installation de l'appli
 

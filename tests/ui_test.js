@@ -202,6 +202,20 @@ async function waitFor(fn, expected, timeout = 5000) {
     airplay('stop');
     check('mpd back when AirPlay stops', await waitFor(title, 'Song', 3000), 'Song');
 
+    // Spotify Connect: librespot runs spotify-event.py on each event
+    const spotify = event => execFileSync('python3', [path.join(ROOT, 'spotify-event.py'), BASE],
+      { env: { ...process.env, ...event } });
+    spotify({ PLAYER_EVENT: 'session_client_changed', CLIENT_NAME: 'Salon' });
+    spotify({ PLAYER_EVENT: 'track_changed', NAME: 'Blue Hour', ARTISTS: 'Vela Nova', ALBUM: 'City After Hours',
+      DURATION_MS: '240000', COVERS: '' });
+    spotify({ PLAYER_EVENT: 'playing', POSITION_MS: '15000' });
+    check('Spotify shown over mpd', await waitFor(title, 'Blue Hour', 3000), 'Blue Hour');
+    check('Spotify: badge and sender', await page.evaluate(() => [
+      document.getElementById('badge-format').textContent, document.getElementById('status-text').textContent]),
+    ['Spotify', 'Playing · Salon']);
+    spotify({ PLAYER_EVENT: 'stopped' });
+    check('mpd back when Spotify stops', await waitFor(title, 'Song', 3000), 'Song');
+
     mpd.kill();
     check('mpd down: explained on the page', await waitFor(nothing, 'MPD unreachable'), 'MPD unreachable');
 

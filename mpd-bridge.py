@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import socket, json, urllib.request, urllib.parse, re, os, threading, logging, queue, time, ssl, sys, stat
-import unicodedata
+import ipaddress, unicodedata
 
 VERSION = '1.0.0'  # with a matching section in CHANGELOG.md
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -44,17 +44,21 @@ ITUNES_ENABLED = os.environ.get('ITUNES_ARTWORK', '1').strip().lower() not in ('
 DEMO = os.environ.get('DEMO', '').strip().lower() in ('1', 'true', 'yes', 'on')
 # AirPlay: shairport-sync's metadata pipe (shairport.py); empty turns it off
 SHAIRPORT_PIPE = os.environ.get('SHAIRPORT_PIPE', '/tmp/shairport-sync-metadata').strip()
+# Spotify Connect: librespot's events, posted by spotify-event.py; 0 turns it off
+SPOTIFY_ENABLED = os.environ.get('SPOTIFY', '1').strip().lower() not in ('0', 'false', 'no', 'off')
 
 # systemd's journal already timestamps each line
 logging.basicConfig(level=logging.INFO, format=('%(levelname)s %(message)s' if os.environ.get('JOURNAL_STREAM')
                                                 else '%(asctime)s %(levelname)s %(message)s'))
 log = logging.getLogger('nowplaying')
 
-sys.path.insert(0, SCRIPT_DIR)  # demo.py and shairport.py
-import shairport
+sys.path.insert(0, SCRIPT_DIR)  # demo.py, shairport.py and spotify.py
+import shairport, spotify
 if DEMO:
     import demo
 AIRPLAY = shairport.AirPlay() if SHAIRPORT_PIPE and not DEMO else None
+SPOTIFY = spotify.Spotify() if SPOTIFY_ENABLED and not DEMO else None
+OTHER_PLAYERS = [player for player in (AIRPLAY, SPOTIFY) if player]  # besides mpd
 
 _mpd_sock = None
 _mpd_lock = threading.Lock()  # the HTTP server is multi-threaded, the mpd socket is shared
@@ -458,13 +462,22 @@ _mpd_problem = None  # last mpd error logged, so each change is logged once
 PROBLEMS = {'mpd_unreachable': 'unreachable', 'mpd_password': 'refused access (check MPD_PASSWORD)',
             'mpd_error': 'answered with an error'}
 
+def other_players():
+    # What AirPlay and Spotify are up to: (playing, paused) payloads, the
+    # one that started playing last first
+    found = sorted(((player.started, data) for player in OTHER_PLAYERS for data in [player.status()] if data),
+                   key=lambda found: found[0], reverse=True)
+    return ([data for _, data in found if data['state'] == 'play'],
+            [data for _, data in found if data['state'] != 'play'])
+
 def status_or_error():
     # (payload, HTTP status): what's playing, or why mpd can't say. AirPlay
-    # comes first while it plays, and while paused if mpd isn't playing
+    # and Spotify come first while they play (the last one started, if
+    # both do), and while paused if mpd isn't playing
     global _mpd_problem
-    airplay = AIRPLAY.status() if AIRPLAY else None
-    if airplay and airplay['state'] == 'play':
-        return airplay, 200
+    playing, paused = other_players()
+    if playing:
+        return playing[0], 200
     try:
         data = get_status()
     except MPDError as e:
@@ -476,14 +489,14 @@ def status_or_error():
         if _mpd_problem:
             log.info('mpd at %s:%s is back', MPD_HOST, MPD_PORT)
             _mpd_problem = None
-        if airplay and data['state'] != 'play':
-            return airplay, 200
+        if paused and data['state'] != 'play':
+            return paused[0], 200
         return data, 200
     if problem != _mpd_problem:
         log.warning('mpd at %s:%s %s: %s', MPD_HOST, MPD_PORT, PROBLEMS[problem[0]], problem[1])
         _mpd_problem = problem
-    if airplay:
-        return airplay, 200  # paused AirPlay beats an mpd error
+    if paused:
+        return paused[0], 200  # paused AirPlay or Spotify beats an mpd error
     return {'error': problem[0], 'detail': problem[1]}, 503
 
 class Broadcaster:
@@ -666,7 +679,42 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.send_response(404)
             self.end_headers()
+
+    def do_POST(self):
+        url = urllib.parse.urlparse(self.path)
+        if url.path == '/spotify' and SPOTIFY:
+            self.spotify_event()
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def spotify_event(self):
+        # An event from librespot, posted by spotify-event.py. Only from this
+        # machine: elsewhere on the network, nobody can make the page show
+        # what they like
+        if not ipaddress.ip_address(self.client_address[0]).is_loopback:
+            self.send_json({'error': 'only from this machine'}, 403)
+            return
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+            event = json.loads(self.rfile.read(length)) if 0 < length <= 65536 else None
+        except ValueError:
+            event = None
+        if not isinstance(event, dict) or not all(isinstance(v, str) for v in event.values()):
+            self.send_json({'error': 'expected a JSON object of strings'}, 400)
+            return
+        global _spotify_seen
+        if not _spotify_seen:
+            log.info('Spotify Connect: librespot tells what it plays')
+            _spotify_seen = True
+        if SPOTIFY.handle(event):
+            publish_status()
+        self.send_response(204)
+        self.end_headers()
+
     def log_message(self, *args): pass
+
+_spotify_seen = False  # logged once, on librespot's first event
 
 def describe_badges(fmt, codec, lossless):
     # The badges the page shows for this format (same rules as index.html)
@@ -777,6 +825,8 @@ def check():
     else:
         report('ok', f'AirPlay: shairport-sync metadata pipe at {SHAIRPORT_PIPE}')
 
+    _check_spotify(report)
+
     # Port
     try:
         with socket.socket() as probe:
@@ -826,6 +876,35 @@ def check():
 
     print('\n' + ('No problem found.' if not problems else f'{problems} problem(s) to fix.'))
     return 1 if problems else 0
+
+RASPOTIFY_CONF = '/etc/raspotify/conf'  # raspotify's settings for librespot
+
+def _check_spotify(report):
+    # Does raspotify run the event program? (librespot started another way
+    # is given --onevent itself: not checked)
+    conf = RASPOTIFY_CONF
+    if DEMO or not SPOTIFY_ENABLED:
+        report('--', 'Spotify Connect: off' + (' (demo mode)' if DEMO else ' (SPOTIFY=0)'))
+        return
+    try:
+        with open(conf) as f:
+            text = f.read()
+    except FileNotFoundError:
+        report('--', 'Spotify Connect: raspotify not found', 'To show Spotify too, see "Spotify Connect" in the README')
+        return
+    except OSError as e:
+        report('--', f'Spotify Connect: cannot read {conf} ({e.strerror})')
+        return
+    m = re.search(r'^[ \t]*LIBRESPOT_ONEVENT[ \t]*=[ \t]*["\']?([^"\'\n]*)', text, re.M)
+    program = m.group(1).split()[0] if m and m.group(1).split() else ''
+    if not program:
+        report('warn', 'Spotify Connect: raspotify does not tell the bridge what it plays',
+               f'Set LIBRESPOT_ONEVENT in {conf} (see "Spotify Connect" in the README)')
+    elif not os.access(program, os.X_OK):
+        report('FAIL', f'Spotify Connect: LIBRESPOT_ONEVENT runs {program}, which is not an executable file',
+               'Install it as the README says (sudo install -m 755 ...)')
+    else:
+        report('ok', f'Spotify Connect: raspotify tells the bridge what it plays ({program})')
 
 def _check_mpd(report):
     where = f'{MPD_HOST}:{MPD_PORT}'

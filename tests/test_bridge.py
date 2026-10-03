@@ -557,11 +557,128 @@ class AirPlayBridgeTest(BridgeTestCase):
         status, data = self.wait_for(b, lambda d: d.get('source') == 'airplay')
         self.assertEqual((status, data['title']), (200, 'Harbor Lights'))
 
+    def test_the_last_one_started_wins(self):
+        b = self.start_bridge(SHAIRPORT_PIPE=self.pipe)
+        self.send('play')
+        self.wait_for(b, lambda d: d.get('source') == 'airplay')
+        spotify_event(b.port, **SPOTIFY_TRACK)
+        spotify_event(b.port, PLAYER_EVENT='playing')
+        self.assertEqual(b.now()[1]['source'], 'spotify')  # started after AirPlay
+        self.send('pause')
+        self.send('resume')  # AirPlay starts again: it's the last one now
+        status, data = self.wait_for(b, lambda d: d.get('source') == 'airplay')
+        self.assertEqual(data['source'], 'airplay')
+
     def test_check_finds_the_pipe(self):
         code, out = run_check(self.mpd.port, SHAIRPORT_PIPE=self.pipe)
         self.assertIn('AirPlay: shairport-sync metadata pipe at', out)
         code, out = run_check(self.mpd.port, SHAIRPORT_PIPE=self.pipe + '-missing')
         self.assertIn('AirPlay: no shairport-sync metadata pipe at', out)
+
+
+def spotify_event(port, **event):
+    # librespot running spotify-event.py, with the event in its environment
+    subprocess.run([sys.executable, os.path.join(ROOT, 'spotify-event.py'), f'http://127.0.0.1:{port}'],
+                   env=dict(os.environ, **event), check=True, timeout=10, capture_output=True)
+
+
+SPOTIFY_TRACK = dict(PLAYER_EVENT='track_changed', NAME='Blue Hour', ARTISTS='Vela Nova', ALBUM='City After Hours',
+                     COVERS='https://i.scdn.co/image/ab67616d0000b273abcd', DURATION_MS='240000', ITEM_TYPE='Track')
+
+
+def post(port, path, body, address='127.0.0.1'):
+    conn = http.client.HTTPConnection(address, port, timeout=5)
+    try:
+        conn.request('POST', path, body=body, headers={'Content-Type': 'application/json'})
+        return conn.getresponse().status
+    finally:
+        conn.close()
+
+
+def outward_address():
+    # This machine's address on its network (no packet is sent), if any
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        try:
+            s.connect(('10.255.255.255', 1))
+            address = s.getsockname()[0]
+        except OSError:
+            return None
+    return None if address.startswith('127.') or address == '0.0.0.0' else address
+
+
+class SpotifyBridgeTest(BridgeTestCase):
+    def test_spotify_and_mpd_take_turns(self):
+        b = self.start_bridge()  # mpd plays a FLAC ("Song")
+        spotify_event(b.port, PLAYER_EVENT='session_client_changed', CLIENT_NAME="Mat's iPhone")
+        spotify_event(b.port, **SPOTIFY_TRACK)
+        self.assertEqual(b.now()[1]['source'], 'mpd')  # not playing yet
+        spotify_event(b.port, PLAYER_EVENT='playing', POSITION_MS='15000')
+        status, data = b.now()
+        self.assertEqual((status, data['source'], data['title'], data['artist'], data['codec'], data['sender']),
+                         (200, 'spotify', 'Blue Hour', 'Vela Nova', 'Spotify', "Mat's iPhone"))
+        self.assertEqual(data['art_url'], 'https://i.scdn.co/image/ab67616d0000b273abcd')
+
+        spotify_event(b.port, PLAYER_EVENT='paused', POSITION_MS='16000')
+        self.assertEqual(b.now()[1]['source'], 'mpd')  # paused while mpd plays: mpd
+        self.mpd.set_scenario('stopped')
+        self.assertEqual(b.now()[1]['state'], 'pause')  # nothing else plays: the paused Spotify
+        spotify_event(b.port, PLAYER_EVENT='stopped')
+        self.assertEqual(b.now()[1]['source'], 'mpd')
+
+    def test_changes_are_pushed(self):
+        b = self.start_bridge()
+        conn = http.client.HTTPConnection('127.0.0.1', b.port, timeout=5)
+        self.addCleanup(conn.close)
+        conn.request('GET', '/events')
+        response = conn.getresponse()
+        self.assertEqual(read_event(response)['source'], 'mpd')
+        spotify_event(b.port, **SPOTIFY_TRACK)
+        spotify_event(b.port, PLAYER_EVENT='playing')
+        titles = [read_event(response)['title']]
+        while titles[-1] != 'Blue Hour' and len(titles) < 5:
+            titles.append(read_event(response)['title'])
+        self.assertEqual(titles[-1], 'Blue Hour')
+
+    def test_only_events_from_this_machine(self):
+        b = self.start_bridge()
+        self.assertEqual(post(b.port, '/spotify', b'not json'), 400)
+        self.assertEqual(post(b.port, '/spotify', b'["a list"]'), 400)
+        self.assertEqual(post(b.port, '/spotify', json.dumps({'PLAYER_EVENT': 'playing'}).encode()), 204)
+        address = outward_address()
+        if address:  # the same request from the network: refused
+            self.assertEqual(post(b.port, '/spotify', b'{"PLAYER_EVENT": "stopped"}', address=address), 403)
+            self.assertEqual(b.now()[1]['source'], 'spotify')
+
+    def test_spotify_off(self):
+        b = self.start_bridge(SPOTIFY='0')
+        self.assertEqual(post(b.port, '/spotify', b'{"PLAYER_EVENT": "playing"}'), 404)
+
+    def test_hook_without_bridge(self):
+        # The bridge isn't running: the hook says so, and librespot carries on
+        result = subprocess.run([sys.executable, os.path.join(ROOT, 'spotify-event.py'),
+                                 f'http://127.0.0.1:{free_port()}'], env=dict(os.environ, PLAYER_EVENT='playing'),
+                                capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn('nowplaying-spotify-event', result.stderr)
+
+
+class CheckSpotifyTest(unittest.TestCase):
+    def check(self, conf=None):
+        reports = []
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, 'conf')
+            if conf is not None:
+                with open(path, 'w') as f:
+                    f.write(conf)
+            with mock.patch.multiple(bridge, RASPOTIFY_CONF=path, DEMO=False, SPOTIFY_ENABLED=True):
+                bridge._check_spotify(lambda status, text, hint='': reports.append(status))
+        return reports
+
+    def test_raspotify_settings(self):
+        self.assertEqual(self.check(), ['--'])  # raspotify not installed
+        self.assertEqual(self.check('#LIBRESPOT_ONEVENT=\nLIBRESPOT_NAME="Salon"\n'), ['warn'])
+        self.assertEqual(self.check('LIBRESPOT_ONEVENT=/nowhere/nowplaying-spotify-event\n'), ['FAIL'])
+        self.assertEqual(self.check(f'LIBRESPOT_ONEVENT="{sys.executable} http://127.0.0.1:8766"\n'), ['ok'])
 
 
 @unittest.skipUnless(shutil.which('openssl'), 'needs openssl to make a test certificate')

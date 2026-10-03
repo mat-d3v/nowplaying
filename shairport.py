@@ -51,6 +51,7 @@ class AirPlay:
         self.lock = threading.Lock()
         self.session = False   # between the start and the end of a play session
         self.playing = False
+        self.started = 0.0     # when it last started playing (time.monotonic)
         self.sender = ''       # e.g. "Mat's iPhone"
         self.picture, self.picture_id = None, 0
         self._pending = None   # track fields of a metadata bundle being received
@@ -73,7 +74,7 @@ class AirPlay:
         # its start went by before the bridge was there
         if not self.session:
             self.session = self.playing = True
-            self.since = time.monotonic()
+            self.since = self.started = time.monotonic()
 
     def handle(self, kind, code, data):
         # Applies one metadata item; True when what the page shows changed
@@ -125,11 +126,9 @@ class AirPlay:
             self._start()
             self.since = time.monotonic()
             return True
-        if code == 'pbeg':      # play session begins
-            self.session = self.playing = True
-            self.since = time.monotonic()
-            return True
-        if code == 'prsm':      # resume after a pause
+        if code in ('pbeg', 'prsm'):  # play session begins, or resumes after a pause
+            if not self.playing:
+                self.started = time.monotonic()
             self.session = self.playing = True
             self.since = time.monotonic()
             return True

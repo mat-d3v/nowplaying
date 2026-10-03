@@ -32,6 +32,7 @@ No nginx and no Python packages required - the bridge only uses the standard lib
 - Radios: "Live" badge, "Artist - Title" split in two lines, station name below
 - Untagged files show their file name
 - AirPlay: what's played from an iPhone, iPad or Mac through shairport-sync shows up too
+- Spotify Connect: what's played from the Spotify app through raspotify (librespot) shows up too
 - Instant updates: the bridge pushes every change as it happens (track, pause, seek, queue)
 - Progress bar, elapsed and total time, smoothly interpolated
 - Scrolling marquee for long titles
@@ -108,6 +109,7 @@ Settings come from environment variables or from a `.env` file next to `mpd-brid
 | TLS_CERT, TLS_KEY | empty | Certificate and private key (PEM) to serve HTTPS, see [below](#https-keeping-the-screen-on-and-installing-the-app) |
 | ALSA_CARD | 0 | ALSA card read for the audio format when mpd doesn't report it |
 | SHAIRPORT_PIPE | /tmp/shairport-sync-metadata | shairport-sync's metadata pipe, for AirPlay; empty turns AirPlay off |
+| SPOTIFY | 1 (on) | Spotify Connect: what librespot (raspotify) plays, from its events; `0` turns it off |
 | DEMO | empty | `1` for the demo mode: made-up tracks, no mpd needed |
 
 ## Run it as a service (systemd)
@@ -143,6 +145,20 @@ metadata =
 ```
 
 The bridge reads that pipe by itself, and `--check` says whether it finds it. `SHAIRPORT_PIPE` sets another path, or turns AirPlay off when empty. Only one program can read the pipe. With Docker, uncomment its line in `docker-compose.yml`.
+
+## Spotify Connect (raspotify)
+
+With [raspotify](https://github.com/dtcooper/raspotify) on the same machine, it shows up as a speaker in the Spotify app, and the page shows what it plays: title, artist, album, artwork, progress, and the device in control. Like AirPlay, Spotify comes first while it plays; when AirPlay and Spotify both play, the last one started shows.
+
+librespot, which raspotify runs, starts a program on each event (track changed, play, pause...): `spotify-event.py` passes them on to the bridge. Install it outside your home folder, where raspotify's service can run it, set it in raspotify's settings, and restart raspotify:
+
+```bash
+sudo install -m 755 spotify-event.py /usr/local/bin/nowplaying-spotify-event
+echo 'LIBRESPOT_ONEVENT=/usr/local/bin/nowplaying-spotify-event' | sudo tee -a /etc/raspotify/conf
+sudo systemctl restart raspotify
+```
+
+When the bridge uses another port, or HTTPS, add its address after the program: `LIBRESPOT_ONEVENT="/usr/local/bin/nowplaying-spotify-event https://127.0.0.1:8766"`. The bridge only takes these events from its own machine; `--check` says whether raspotify runs the program, and `SPOTIFY=0` turns Spotify off. Track details need librespot 0.5 or later; librespot started another way takes the same program as `--onevent`.
 
 ## HTTPS: keeping the screen on and installing the app
 
