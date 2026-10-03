@@ -19,7 +19,9 @@ jobs:
 
   page:
     name: Page tests in Chromium
-    runs-on: ubuntu-latest
+    # Playwright 1.56 installs Chromium's system libraries for Ubuntu 24.04:
+    # stay on it while ubuntu-latest moves on to Ubuntu 26 (October 2026)
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - name: Install Playwright and Chromium
