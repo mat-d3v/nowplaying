@@ -183,6 +183,22 @@
       font-weight: 400; border: 1px solid rgba(255,255,255,0.15);
     }
 
+    .badge-live {
+      display: none; align-items: center; gap: 7px;
+      background: rgba(248,113,113,0.14); color: #fecaca;
+      border: 1px solid rgba(248,113,113,0.4);
+      text-transform: uppercase; letter-spacing: 1px;
+    }
+    .badge-live.visible { display: inline-flex; }
+    .badge-live .live-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #f87171; animation: pulse 2s infinite;
+    }
+
+    /* Live radio: no duration, so no progress bar nor times */
+    #info.live #progress-bar, #info.live #times { display: none; }
+    #info.live #audio-info { margin-bottom: 0; }
+
     #hires-badge { display: none; }
     #hires-badge.visible { display: inline-flex; align-items: center; }
     #hires-badge img { height: 28px; width: auto; }
@@ -344,6 +360,7 @@
     <div class="marquee-wrap"><div id="artist" class="marquee-text">—</div></div>
     <div class="marquee-wrap"><div id="album" class="marquee-text">—</div></div>
     <div id="audio-info">
+      <span id="badge-live" class="badge badge-live"><span class="live-dot"></span><span data-i18n="live">Live</span></span>
       <span id="badge-format" class="badge badge-format" style="display:none"></span>
       <span id="badge-quality" class="badge badge-quality" style="display:none"></span>
       <span id="hires-badge">
@@ -375,7 +392,7 @@
     en: {
       offline: 'Offline', noArtwork: 'No artwork', waiting: 'Waiting', upNext: 'Up next',
       nothing: 'Nothing playing', waitingPlayback: 'Waiting for playback...',
-      playing: 'Playing', paused: 'Paused',
+      playing: 'Playing', paused: 'Paused', live: 'Live',
       mpd_unreachable: 'MPD unreachable', mpd_unreachableHint: 'Check that mpd is running, and MPD_HOST / MPD_PORT',
       mpd_password: 'MPD needs a password', mpd_passwordHint: 'Set MPD_PASSWORD in .env (or check it)',
       mpd_error: 'MPD error',
@@ -383,7 +400,7 @@
     fr: {
       offline: 'Hors ligne', noArtwork: 'Aucune pochette', waiting: 'En attente', upNext: 'À suivre',
       nothing: 'Aucune lecture en cours', waitingPlayback: 'En attente de lecture...',
-      playing: 'En lecture', paused: 'En pause',
+      playing: 'En lecture', paused: 'En pause', live: 'En direct',
       mpd_unreachable: 'MPD injoignable', mpd_unreachableHint: 'Vérifiez que mpd tourne, ainsi que MPD_HOST / MPD_PORT',
       mpd_password: 'MPD demande un mot de passe', mpd_passwordHint: 'Renseignez MPD_PASSWORD dans .env (ou vérifiez-le)',
       mpd_error: 'Erreur MPD',
@@ -640,6 +657,10 @@
     document.getElementById('vignette').className      = isPaused ? 'paused' : '';
     document.getElementById('status-text').textContent = isPlaying ? T.playing : T.paused;
     document.getElementById('total-time').textContent   = formatTime(d.duration);
+    // Live radio: a "Live" badge instead of a progress bar stuck at 0:00
+    const live = !!d.stream && !(d.duration > 0);
+    document.getElementById('info').classList.toggle('live', live);
+    document.getElementById('badge-live').classList.toggle('visible', live);
 
     // The ticker (tick) interpolates elapsed between polls for smooth progress
     playback = { elapsed: d.elapsed, duration: d.duration, playing: isPlaying, at: performance.now() };

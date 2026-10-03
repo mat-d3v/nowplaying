@@ -31,6 +31,8 @@ PORT = int(os.environ.get('PORT', '8766'))
 LASTFM_KEY = os.environ.get('LASTFM_API_KEY', '')
 # Empty, or still the placeholder of older setups: no Last.fm lookups
 LASTFM_ENABLED = LASTFM_KEY not in ('', 'your_lastfm_api_key_here')
+# Radio artwork from the iTunes Search API (free, no key): on unless set to 0
+ITUNES_ENABLED = os.environ.get('ITUNES_ARTWORK', '1').strip().lower() not in ('0', 'false', 'no', 'off')
 
 # systemd's journal already timestamps each line
 logging.basicConfig(level=logging.INFO, format=('%(levelname)s %(message)s' if os.environ.get('JOURNAL_STREAM')
@@ -255,6 +257,29 @@ def get_art_url(artist, album):
     _art_cache[key] = ''
     return ''
 
+_itunes_cache = {}
+
+def get_itunes_art(artist, title):
+    # Artwork for radio tracks: radios send no album, so Last.fm's
+    # album.getinfo can't help, but iTunes finds the song from artist + title
+    key = f'{artist}|{title}'
+    if key in _itunes_cache:
+        return _itunes_cache[key]
+    if len(_itunes_cache) > 500:
+        _itunes_cache.clear()  # simple cap to avoid unbounded growth
+    art = ''
+    try:
+        q = urllib.parse.urlencode({'term': f'{artist} {title}', 'media': 'music', 'entity': 'song', 'limit': 1})
+        with urllib.request.urlopen(f'https://itunes.apple.com/search?{q}', timeout=5) as r:
+            results = json.loads(r.read()).get('results', [])
+        if results and results[0].get('artworkUrl100'):
+            # 100x100 thumbnails; the same URL serves larger sizes
+            art = results[0]['artworkUrl100'].replace('/100x100bb.', '/600x600bb.')
+    except Exception as e:
+        log.warning('iTunes artwork lookup failed for %s - %s: %s', artist, title, e)
+    _itunes_cache[key] = art
+    return art
+
 def get_audio_format(status):
     # mpd's own "audio" field is the decoded source format ("44100:16:2",
     # "44100:f:2" for float decoders, "dsd64:2"): that's what the badges
@@ -307,24 +332,36 @@ def get_status():
     elapsed = float(status.get('elapsed', 0))
     duration = float(status.get('duration', 0))
     file_url = currentsong.get('file', '')
+    stream = '://' in file_url
     artist = currentsong.get('artist', '')
     album = currentsong.get('album', '')
     title = display_title(currentsong)
-    # Radios: the station name goes on the artist line when the stream sends
-    # no artist (and the name isn't already used as the title)
-    name = currentsong.get('name', '')
-    shown_artist = artist or (name if name != title else '')
+    name = currentsong.get('name', '')  # station name, for streams
+    shown_artist, shown_album = artist, album
+    stream_title = currentsong.get('title', '')
+    if stream and not artist and ' - ' in stream_title:
+        # Radios send "Artist - Title" as the title: split it, and put the
+        # station on the album line
+        left, right = (part.strip() for part in stream_title.split(' - ', 1))
+        if left and right:
+            shown_artist, title = left, right
+            shown_album = album or name
+    if not shown_artist and name != title:
+        shown_artist = name  # a radio with no artist: the station instead
     fmt = get_audio_format(status) if state != 'stop' else ''
     codec, lossless = get_codec(file_url, status.get('audio', ''))
-    # Artwork: prefer mpd itself (embedded tags or cover file, no API key
-    # needed), fall back to Last.fm for streams or when mpd has nothing.
+    # Artwork: mpd itself first (embedded tags or cover file, no API key
+    # needed), then Last.fm (artist + album), then iTunes for radios
+    # (artist + title, as radios send no album)
     art_url = ''
-    if file_url and not file_url.startswith('http'):
+    if file_url and not stream:
         data, _ = get_mpd_art(file_url)
         if data:
             art_url = '/art?file=' + urllib.parse.quote(file_url, safe='')
     if not art_url and artist and album and LASTFM_ENABLED:
         art_url = get_art_url(artist, album)
+    if not art_url and stream and shown_artist and shown_artist != name and ITUNES_ENABLED:
+        art_url = get_itunes_art(shown_artist, title)
     # Next track in the queue (mpd exposes its position via 'nextsong')
     next_title = ''
     next_artist = ''
@@ -340,7 +377,7 @@ def get_status():
         'state': state,
         'title': title,
         'artist': shown_artist or '\u2014',
-        'album': album,
+        'album': shown_album,
         'elapsed': elapsed,
         'duration': duration,
         'format': fmt,
@@ -348,6 +385,7 @@ def get_status():
         'lossless': lossless,
         'art_url': art_url,
         'file': file_url,
+        'stream': stream,
         'next_title': next_title,
         'next_artist': next_artist
     }
@@ -435,6 +473,7 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
     def log_message(self, *args): pass
 
-log.info('nowplaying bridge on port %s, mpd at %s:%s%s, Last.fm artwork %s', PORT, MPD_HOST, MPD_PORT,
-         ' (with password)' if MPD_PASSWORD else '', 'on' if LASTFM_ENABLED else 'off')
+log.info('nowplaying bridge on port %s, mpd at %s:%s%s, Last.fm artwork %s, iTunes radio artwork %s',
+         PORT, MPD_HOST, MPD_PORT, ' (with password)' if MPD_PASSWORD else '',
+         'on' if LASTFM_ENABLED else 'off', 'on' if ITUNES_ENABLED else 'off')
 ThreadingHTTPServer(('0.0.0.0', PORT), Handler).serve_forever()
