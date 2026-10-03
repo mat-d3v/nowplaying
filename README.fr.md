@@ -12,7 +12,7 @@
   <sub>▶ <a href="https://cdn.jsdelivr.net/gh/mat-d3v/nowplaying@main/assets/nowplaying-presentation.mp4">Voir la vidéo de présentation</a> (52 s, avec le son, en anglais)</sub>
 </p>
 
-![Aperçu](screenshot.png)
+![Aperçu](screenshot.fr.jpg)
 
 Page plein écran "En lecture" pour MPD. Affiche le titre en cours avec un dégradé de fond extrait de la pochette, des badges de qualité audio et la détection Hi-Res.
 
@@ -56,6 +56,14 @@ Ouvrez ensuite http://localhost:8766 dans un navigateur, ou `http://<ip-de-la-ma
 
 La page suit la langue du navigateur (anglais ou français). Pour en forcer une : http://localhost:8766/?lang=fr ou `?lang=en` (http://localhost:8766/index.fr.html fonctionne toujours).
 
+## Essayer sans mpd
+
+```bash
+DEMO=1 python3 mpd-bridge.py
+```
+
+Joue en boucle quelques morceaux inventés (FLAC Hi-Res, ALAC, MP3, une radio, DSD), un toutes les 20 secondes (`DEMO_STEP` pour changer ce délai), avec des pochettes générées : pratique pour essayer la page, ou faire des captures comme celle du haut.
+
 ## Vérifier l'installation
 
 ```bash
@@ -90,6 +98,7 @@ Les réglages viennent des variables d'environnement ou d'un fichier `.env` plac
 | LASTFM_API_KEY | vide (désactivé) | Secours pochettes Last.fm quand mpd n'en a pas (il faut les tags artiste et album) |
 | TLS_CERT, TLS_KEY | vide | Certificat et clé privée (PEM) pour servir en HTTPS, voir plus bas |
 | ALSA_CARD | 0 | Carte ALSA lue pour le format audio quand mpd ne le donne pas |
+| DEMO | vide | `1` pour le mode démo : morceaux inventés, sans mpd |
 
 ## Lancer comme service (systemd)
 

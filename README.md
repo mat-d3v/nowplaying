@@ -12,7 +12,7 @@
   <sub>▶ <a href="https://cdn.jsdelivr.net/gh/mat-d3v/nowplaying@main/assets/nowplaying-presentation.mp4">Watch the presentation video</a> (52 s, with sound)</sub>
 </p>
 
-![Preview](screenshot.png)
+![Preview](screenshot.jpg)
 
 Fullscreen Now Playing page for MPD. Shows the current track with a dynamic background gradient pulled from the album art, audio quality badges, and Hi-Res detection.
 
@@ -56,6 +56,14 @@ Then open http://localhost:8766 in a browser, or `http://<machine-ip>:8766` from
 
 The page follows the browser's language (English or French). To force one: http://localhost:8766/?lang=fr or `?lang=en` (http://localhost:8766/index.fr.html still works too).
 
+## Try it without mpd
+
+```bash
+DEMO=1 python3 mpd-bridge.py
+```
+
+Plays a few made-up tracks in a loop (Hi-Res FLAC, ALAC, MP3, a radio, DSD), one every 20 seconds (`DEMO_STEP` changes that), with generated artwork: handy to try the page, or to take screenshots like the one above.
+
 ## Check your setup
 
 ```bash
@@ -90,6 +98,7 @@ Settings come from environment variables or from a `.env` file next to `mpd-brid
 | LASTFM_API_KEY | empty (off) | Last.fm artwork fallback when mpd has none (needs artist and album tags) |
 | TLS_CERT, TLS_KEY | empty | Certificate and private key (PEM) to serve HTTPS, see [below](#https-keeping-the-screen-on-and-installing-the-app) |
 | ALSA_CARD | 0 | ALSA card read for the audio format when mpd doesn't report it |
+| DEMO | empty | `1` for the demo mode: made-up tracks, no mpd needed |
 
 ## Run it as a service (systemd)
 

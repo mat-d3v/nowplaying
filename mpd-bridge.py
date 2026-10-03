@@ -37,11 +37,17 @@ LASTFM_KEY = os.environ.get('LASTFM_API_KEY', '')
 LASTFM_ENABLED = LASTFM_KEY not in ('', 'your_lastfm_api_key_here')
 # Radio artwork from the iTunes Search API (free, no key): on unless set to 0
 ITUNES_ENABLED = os.environ.get('ITUNES_ARTWORK', '1').strip().lower() not in ('0', 'false', 'no', 'off')
+# Demo mode: made-up tracks (demo.py) instead of mpd
+DEMO = os.environ.get('DEMO', '').strip().lower() in ('1', 'true', 'yes', 'on')
 
 # systemd's journal already timestamps each line
 logging.basicConfig(level=logging.INFO, format=('%(levelname)s %(message)s' if os.environ.get('JOURNAL_STREAM')
                                                 else '%(asctime)s %(levelname)s %(message)s'))
 log = logging.getLogger('nowplaying')
+
+if DEMO:
+    sys.path.insert(0, SCRIPT_DIR)
+    import demo
 
 _art_cache = {}
 
@@ -330,6 +336,8 @@ def display_title(song):
     return os.path.splitext(uri.rsplit('/', 1)[-1])[0]
 
 def get_status():
+    if DEMO:
+        return demo.status()
     status = parse_mpd(mpd_command('status'))
     currentsong = parse_mpd(mpd_command('currentsong'))
     state = status.get('state', 'stop')
@@ -496,6 +504,13 @@ def watch_mpd():
             log.exception('mpd watcher failed, restarting it')
             time.sleep(2)
 
+def watch_demo():
+    # Demo mode: a change each time the next made-up track starts
+    threading.Thread(target=demo.draw_all, daemon=True).start()
+    while True:
+        time.sleep(demo.until_next_track() + 0.05)
+        publish_status()
+
 PAGE = ('index.html', 'text/html; charset=utf-8')
 STATIC_FILES = {
     '/': PAGE,
@@ -557,7 +572,10 @@ class Handler(BaseHTTPRequestHandler):
         elif url.path == '/art':
             qs = urllib.parse.parse_qs(url.query)
             uri = qs.get('file', [''])[0]
-            data, mime = get_mpd_art(uri) if uri else (None, '')
+            if DEMO and qs.get('demo', [''])[0].isdigit():
+                data, mime = demo.artwork(qs['demo'][0]), 'image/png'
+            else:
+                data, mime = get_mpd_art(uri) if uri else (None, '')
             if data:
                 self.send_response(200)
                 self.send_header('Content-Type', mime or 'image/jpeg')
@@ -630,7 +648,10 @@ def check():
     report('ok' if os.path.exists(env_file) else '--',
            f'Settings from {env_file}' if os.path.exists(env_file) else 'No .env file: defaults and environment variables only')
 
-    _check_mpd(report)
+    if DEMO:
+        report('--', 'Demo mode (DEMO=1): made-up tracks, mpd is not used')
+    else:
+        _check_mpd(report)
 
     # ALSA: only a fallback for the audio format
     if not os.path.isdir('/proc/asound'):
@@ -831,11 +852,15 @@ def main():
         except (OSError, ssl.SSLError) as e:
             log.error('cannot load TLS_CERT=%s / TLS_KEY=%s: %s', TLS_CERT, TLS_KEY, e)
             raise SystemExit(1)
-    log.info('nowplaying bridge on %s port %s, mpd at %s:%s%s, Last.fm artwork %s, iTunes radio artwork %s',
-             'HTTPS' if server.tls else 'HTTP', PORT, MPD_HOST, MPD_PORT,
-             ' (with password)' if MPD_PASSWORD else '',
-             'on' if LASTFM_ENABLED else 'off', 'on' if ITUNES_ENABLED else 'off')
-    threading.Thread(target=watch_mpd, name='mpd-idle', daemon=True).start()
+    if DEMO:
+        log.info('nowplaying bridge on %s port %s, demo mode: made-up tracks, mpd is not used',
+                 'HTTPS' if server.tls else 'HTTP', PORT)
+    else:
+        log.info('nowplaying bridge on %s port %s, mpd at %s:%s%s, Last.fm artwork %s, iTunes radio artwork %s',
+                 'HTTPS' if server.tls else 'HTTP', PORT, MPD_HOST, MPD_PORT,
+                 ' (with password)' if MPD_PASSWORD else '',
+                 'on' if LASTFM_ENABLED else 'off', 'on' if ITUNES_ENABLED else 'off')
+    threading.Thread(target=watch_demo if DEMO else watch_mpd, name='updates', daemon=True).start()
     server.serve_forever()
 
 if __name__ == '__main__':

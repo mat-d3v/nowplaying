@@ -287,13 +287,15 @@ class PasswordTest(BridgeTestCase):
         self.assertEqual(code, 0, out)
 
 
-class EventsTest(BridgeTestCase):
-    def read_event(self, response):
-        while True:
-            line = response.readline().decode()
-            if line.startswith('data: '):
-                return json.loads(line[6:])
+def read_event(response):
+    # The next server-sent event's payload
+    while True:
+        line = response.readline().decode()
+        if line.startswith('data: '):
+            return json.loads(line[6:])
 
+
+class EventsTest(BridgeTestCase):
     def test_changes_are_pushed(self):
         b = self.start_bridge()
         conn = http.client.HTTPConnection('127.0.0.1', b.port, timeout=5)
@@ -301,11 +303,11 @@ class EventsTest(BridgeTestCase):
         conn.request('GET', '/events')
         response = conn.getresponse()
         self.assertEqual(response.getheader('Content-Type'), 'text/event-stream')
-        self.assertEqual(self.read_event(response)['title'], 'Song')  # current status first
+        self.assertEqual(read_event(response)['title'], 'Song')  # current status first
         time.sleep(0.3)  # let the bridge enter mpd's idle mode
         start = time.time()
         self.mpd.set_scenario('mp3_mad')
-        self.assertEqual(self.read_event(response)['title'], 'Song MP3')
+        self.assertEqual(read_event(response)['title'], 'Song MP3')
         self.assertLess(time.time() - start, 1)
 
     def test_watcher_survives_errors(self):
@@ -314,14 +316,48 @@ class EventsTest(BridgeTestCase):
         self.addCleanup(conn.close)
         conn.request('GET', '/events')
         response = conn.getresponse()
-        self.assertEqual(self.read_event(response)['title'], 'Song')
+        self.assertEqual(read_event(response)['title'], 'Song')
         time.sleep(0.3)
         self.mpd.set_scenario('bad_status')  # building the status fails
         time.sleep(0.3)
         status, data = b.now()
         self.assertEqual((status, data['error']), (500, 'internal'))
         self.mpd.set_scenario('mp3_mad')  # the watcher must still be there
-        self.assertEqual(self.read_event(response)['title'], 'Song MP3')
+        self.assertEqual(read_event(response)['title'], 'Song MP3')
+
+
+sys.path.insert(0, ROOT)
+import demo  # noqa: E402
+
+
+class DemoTest(unittest.TestCase):
+    def test_tracks_cycle(self):
+        step, count = demo.STEP, len(demo.TRACKS)
+        self.assertEqual(demo.status(demo.START)['title'], demo.TRACKS[0]['title'])
+        self.assertEqual(demo.status(demo.START + step)['title'], demo.TRACKS[1]['title'])
+        self.assertEqual(demo.status(demo.START + step * count)['title'], demo.TRACKS[0]['title'])
+        self.assertAlmostEqual(demo.until_next_track(demo.START + step / 4), step * 3 / 4)
+        radio = [demo.status(demo.START + step * i) for i in range(count) if demo.TRACKS[i].get('stream')][0]
+        self.assertEqual((radio['stream'], radio['duration'], radio['codec']), (True, 0.0, ''))
+
+    def test_bridge_in_demo_mode(self):
+        b = Bridge(free_port(), DEMO='1', DEMO_STEP='1')  # no mpd at all
+        self.addCleanup(b.stop)
+        titles = [t['title'] for t in demo.TRACKS]
+        status, data = b.now()
+        self.assertEqual(status, 200)
+        self.assertIn(data['title'], titles)
+        status, headers, body = b.get(data['art_url'])
+        self.assertEqual((status, headers['Content-Type'], body[:8]), (200, 'image/png', b'\x89PNG\r\n\x1a\n'))
+        conn = http.client.HTTPConnection('127.0.0.1', b.port, timeout=5)
+        self.addCleanup(conn.close)
+        conn.request('GET', '/events')
+        response = conn.getresponse()
+        # The next track gets pushed (the current one may come twice: an
+        # update can land in the queue just as the page subscribes)
+        first = read_event(response)['title']
+        titles = [read_event(response)['title'] for _ in range(3)]
+        self.assertTrue(any(title != first for title in titles), (first, titles))
 
 
 @unittest.skipUnless(shutil.which('openssl'), 'needs openssl to make a test certificate')
