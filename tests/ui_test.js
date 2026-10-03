@@ -14,6 +14,15 @@ const MPD_PORT = 16600, BRIDGE_PORT = 18766, BASE = `http://localhost:${BRIDGE_P
 const PIPE = path.join(os.tmpdir(), `nowplaying-airplay-${process.pid}`);  // shairport-sync's metadata pipe
 const FIFO = path.join(os.tmpdir(), `nowplaying-mpd-${process.pid}.fifo`);  // mpd's fifo output, for the VU meters
 const DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'nowplaying-data-'));    // what the bridge saves
+// A listening history, from yesterday and today
+const HOUR = 3600, NOW = Math.floor(Date.now() / 1000);
+const TODAY = new Date(); TODAY.setHours(0, 0, 0, 0);
+const AT_TODAY = Math.max(Math.floor(TODAY.getTime() / 1000) + 60, NOW - HOUR);
+fs.writeFileSync(path.join(DATA, 'history.jsonl'), [
+  { at: Math.floor(TODAY.getTime() / 1000) - 3 * HOUR, title: 'Last Night', artist: 'Vela Nova', album: 'City After Hours', source: 'mpd' },
+  { at: AT_TODAY, title: 'Harbor Lights', artist: 'June Avenue', album: 'Night Ferries', source: 'airplay' },
+  { at: AT_TODAY + 300, title: 'One More Time', artist: 'Daft Punk', album: 'Radio X', station: 'Radio X', source: 'mpd' },
+].map(entry => JSON.stringify({ station: '', duration: 0, art: '', ...entry }) + '\n').join(''));
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const failures = [];
 
@@ -262,6 +271,21 @@ async function waitFor(fn, expected, timeout = 5000) {
     await phone.click('#reset');
     await phone.click('#save');
     check('back to the defaults', await waitFor(clockFormat(kiosk), '24h'), '24h');
+
+    // Listening history: by day, the latest first, with the track playing now
+    const historyPage = await browser.newPage({ viewport: { width: 390, height: 844 }, locale: 'en-US' });
+    await historyPage.goto(BASE + '/history');
+    const historyView = () => historyPage.evaluate(() => ({
+      days: [...document.querySelectorAll('h2')].map(h => h.textContent),
+      titles: [...document.querySelectorAll('li .title')].map(t => t.textContent),
+      sources: [...document.querySelectorAll('li .source')].map(s => s.textContent),
+      now: document.getElementById('now').classList.contains('visible') && document.getElementById('now-title').textContent,
+    }));
+    check('history page', await waitFor(historyView, {
+      days: ['Today', 'Yesterday'], titles: ['One More Time', 'Harbor Lights', 'Last Night'],
+      sources: ['Radio', 'AirPlay'], now: 'Song',
+    }), { days: ['Today', 'Yesterday'], titles: ['One More Time', 'Harbor Lights', 'Last Night'],
+      sources: ['Radio', 'AirPlay'], now: 'Song' });
 
     mpd.kill();
     check('mpd down: explained on the page', await waitFor(nothing, 'MPD unreachable'), 'MPD unreachable');

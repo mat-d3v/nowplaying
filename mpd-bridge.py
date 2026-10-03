@@ -53,20 +53,38 @@ MPD_FIFO = os.environ.get('MPD_FIFO', '/tmp/mpd.fifo').strip()
 DATA_DIR = os.path.join(SCRIPT_DIR, os.environ.get('DATA_DIR', '').strip() or '.')
 # The settings page (/settings); 0 turns it off, saved settings still apply
 SETTINGS_PAGE = os.environ.get('SETTINGS_PAGE', '1').strip().lower() not in ('0', 'false', 'no', 'off')
+# Listening history (history.py), kept in DATA_DIR; 0 turns it off
+HISTORY_ENABLED = os.environ.get('HISTORY', '1').strip().lower() not in ('0', 'false', 'no', 'off')
+# Scrobbling: to ListenBrainz with a user token; to Last.fm with the API key
+# above, its secret, and a session key from --lastfm-login
+LISTENBRAINZ_TOKEN = os.environ.get('LISTENBRAINZ_TOKEN', '').strip()
+LASTFM_SECRET = os.environ.get('LASTFM_API_SECRET', '').strip()
+LASTFM_SESSION = os.environ.get('LASTFM_SESSION_KEY', '').strip()
+SCROBBLE_SOURCES = [s.strip() for s in os.environ.get('SCROBBLE_SOURCES', 'mpd,airplay').split(',') if s.strip()]
 
 # systemd's journal already timestamps each line
 logging.basicConfig(level=logging.INFO, format=('%(levelname)s %(message)s' if os.environ.get('JOURNAL_STREAM')
                                                 else '%(asctime)s %(levelname)s %(message)s'))
 log = logging.getLogger('nowplaying')
 
-sys.path.insert(0, SCRIPT_DIR)  # demo.py, levels.py, shairport.py and spotify.py
-import levels, shairport, spotify
+sys.path.insert(0, SCRIPT_DIR)  # demo.py, history.py, levels.py, shairport.py and spotify.py
+import history, levels, shairport, spotify
 if DEMO:
     import demo
 AIRPLAY = shairport.AirPlay() if SHAIRPORT_PIPE and not DEMO else None
 SPOTIFY = spotify.Spotify() if SPOTIFY_ENABLED and not DEMO else None
 LEVELS = (levels.LevelMeter(levels.demo_levels) if DEMO
           else levels.LevelMeter(levels.fifo_levels(MPD_FIFO, log)) if MPD_FIFO else None)
+HISTORY_FILE = os.path.join(DATA_DIR, 'history.jsonl')
+LISTENING = None  # history.Listening, once the bridge runs (see main)
+
+def scrobble_services():
+    services = []
+    if LISTENBRAINZ_TOKEN:
+        services.append(history.ListenBrainz(LISTENBRAINZ_TOKEN, VERSION))
+    if LASTFM_ENABLED and LASTFM_SECRET and LASTFM_SESSION:
+        services.append(history.LastFm(LASTFM_KEY, LASTFM_SECRET, LASTFM_SESSION))
+    return services
 OTHER_PLAYERS = [player for player in (AIRPLAY, SPOTIFY) if player]  # besides mpd
 
 _mpd_sock = None
@@ -472,6 +490,7 @@ def get_status():
         'next_title': next_title,
         'next_artist': next_artist,
         'levels': bool(MPD_FIFO) and is_fifo(MPD_FIFO),  # VU meters possible
+        'station': name if stream else '',
     }
 
 _mpd_problem = None  # last mpd error logged, so each change is logged once
@@ -589,14 +608,23 @@ events = Broadcaster()
 IDLE_REFRESH = 55  # seconds without news before checking the idle connection
 
 def publish_status():
-    # The current status (or mpd's error) to the pages listening, if any.
-    # Never raises: the watcher thread must outlive any bug in here, or the
-    # pages would keep a live but silent event stream and freeze
-    if events.has_clients():
+    # The current status (or mpd's error) to the listening history, and to
+    # the pages listening. Never raises: the watcher thread must outlive any
+    # bug in here, or the pages would keep a live but silent event stream
+    # and freeze
+    if not (LISTENING or events.has_clients()):
+        return
+    try:
+        status = status_or_error()[0]
+    except Exception:
+        log.exception('cannot build the status for /events')
+        return
+    if LISTENING:
         try:
-            events.publish(status_or_error()[0])
+            LISTENING.observe(status)
         except Exception:
-            log.exception('cannot build the status for /events')
+            log.exception('listening history failed')
+    events.publish(status)
 
 def watch_mpd():
     # mpd's "idle" command blocks until something changes (track, play/pause,
@@ -655,6 +683,7 @@ STATIC_FILES = {
     '/icon-192.png': ('assets/icon-192.png', 'image/png'),
     '/icon-512.png': ('assets/logo.png', 'image/png'),
     '/settings': SETTINGS_FILE,
+    '/history': ('history.html', 'text/html; charset=utf-8'),
 }
 
 class Handler(BaseHTTPRequestHandler):
@@ -734,6 +763,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
         elif url.path == '/display':
             self.send_json(load_display())
+        elif url.path == '/history.json':
+            on = bool(LISTENING) and HISTORY_ENABLED
+            self.send_json({'enabled': on, 'tracks': LISTENING.recent() if on else []})
         elif url.path in STATIC_FILES and (STATIC_FILES[url.path] != SETTINGS_FILE or SETTINGS_PAGE):
             filename, content_type = STATIC_FILES[url.path]
             filepath = os.path.join(SCRIPT_DIR, filename)
@@ -945,6 +977,25 @@ def check():
     else:
         report('FAIL', f'Settings page: cannot save in {DATA_DIR}', 'Set DATA_DIR to a folder the bridge can write to')
 
+    # Listening history, scrobbling
+    if not HISTORY_ENABLED:
+        report('--', 'Listening history: off (HISTORY=0)')
+    else:
+        kept = len(history.Listening(HISTORY_FILE).entries)
+        report('ok', f'Listening history at /history: {kept} track(s) in {HISTORY_FILE}')
+    for service in scrobble_services():
+        try:
+            report('ok', f'{service.name}: scrobbling as {service.user()} ({", ".join(SCROBBLE_SOURCES) or "nothing"})')
+        except history.ScrobbleError as e:
+            report('FAIL', f'{service.name}: {e}', 'Check its settings in .env (see "Listening history" in the README)')
+        except Exception as e:
+            report('warn', f'{service.name} unreachable: {e}')
+    if LASTFM_SECRET and not LASTFM_SESSION:
+        report('warn', 'Last.fm: an API secret but no session key, so no scrobbling',
+               'Run python3 mpd-bridge.py --lastfm-login')
+    elif not scrobble_services():
+        report('--', 'Scrobbling: off (ListenBrainz or Last.fm, see "Listening history" in the README)')
+
     # VU meters
     if DEMO:
         report('--', 'VU meters (?vu=1): made-up levels (demo mode)')
@@ -1145,12 +1196,46 @@ class Server(ThreadingHTTPServer):
         finally:
             self.shutdown_request(request)
 
+def lastfm_login():
+    # python3 mpd-bridge.py --lastfm-login: lets the bridge scrobble to your
+    # Last.fm account (Last.fm's desktop authentication: a token you allow
+    # on its site, exchanged for a session key that doesn't expire)
+    if not (LASTFM_ENABLED and LASTFM_SECRET):
+        print('First set LASTFM_API_KEY and LASTFM_API_SECRET in .env: create them (free) at\n'
+              'https://www.last.fm/api/account/create')
+        return 1
+    service = history.LastFm(LASTFM_KEY, LASTFM_SECRET)
+    try:
+        token = service.call('auth.getToken')['token']
+        print('Open this address, log in to Last.fm if needed, and allow nowplaying:\n\n'
+              f'  https://www.last.fm/api/auth/?api_key={LASTFM_KEY}&token={token}\n')
+        input('Then press Enter here... ')
+        session = service.call('auth.getSession', token=token)['session']
+    except (history.ScrobbleError, OSError, KeyError) as e:
+        print(f'\nLast.fm said no: {e}')
+        return 1
+    line = f'LASTFM_SESSION_KEY={session["key"]}'
+    print(f'\nAllowed for {session["name"]}. The session key, for .env:\n\n  {line}\n')
+    env_file = os.path.join(SCRIPT_DIR, '.env')
+    if input(f'Add it to {env_file} now? [Y/n] ').strip().lower() in ('', 'y', 'yes'):
+        try:
+            with open(env_file, 'a') as f:
+                f.write(f'\n{line}\n')
+        except OSError as e:  # e.g. read-only, in a container
+            print(f'Cannot write to {env_file} ({e.strerror}): add the line yourself.')
+            return 1
+        print('Added: restart the bridge to start scrobbling.')
+    return 0
+
 def main():
+    global LISTENING
     if '--version' in sys.argv[1:]:
         print(f'nowplaying {VERSION}')
         return
     if '--check' in sys.argv[1:]:
         raise SystemExit(check())
+    if '--lastfm-login' in sys.argv[1:]:
+        raise SystemExit(lastfm_login())
     server = Server(('0.0.0.0', PORT), Handler)
     if TLS_CERT or TLS_KEY:
         server.tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -1167,6 +1252,13 @@ def main():
                  VERSION, 'HTTPS' if server.tls else 'HTTP', PORT, MPD_HOST, MPD_PORT,
                  ' (with password)' if MPD_PASSWORD else '',
                  'on' if LASTFM_ENABLED else 'off', 'on' if ITUNES_ENABLED else 'off')
+    services = [] if DEMO else scrobble_services()
+    if HISTORY_ENABLED or services:
+        LISTENING = history.Listening(HISTORY_FILE if HISTORY_ENABLED and not DEMO else None,
+                                      history.Scrobbler(services, log) if services else None, SCROBBLE_SOURCES, log)
+        log.info('listening history %s, scrobbling %s',
+                 ('off' if not HISTORY_ENABLED else 'in memory (demo mode)' if DEMO else f'in {HISTORY_FILE}'),
+                 f'to {" and ".join(s.name for s in services)} ({", ".join(SCROBBLE_SOURCES)})' if services else 'off')
     threading.Thread(target=watch_demo if DEMO else watch_mpd, name='updates', daemon=True).start()
     if AIRPLAY:
         threading.Thread(target=shairport.follow, args=(SHAIRPORT_PIPE, AIRPLAY, publish_status, log),

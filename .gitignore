@@ -5,3 +5,5 @@ __pycache__/
 node_modules/
 settings.json
 settings.json.tmp
+history.jsonl
+history.jsonl.tmp

@@ -695,6 +695,33 @@ class DisplaySettingsTest(BridgeTestCase):
         self.assertEqual(self.post(b, {'clock': '12'}), 404)
 
 
+class HistoryBridgeTest(BridgeTestCase):
+    def test_history_page(self):
+        data = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, data)
+        with open(os.path.join(data, 'history.jsonl'), 'w') as f:
+            f.write(json.dumps({'at': 1700000000, 'title': 'Earlier', 'artist': 'Art', 'album': 'Alb',
+                                'source': 'mpd', 'station': '', 'duration': 200, 'art': ''}) + '\n')
+        b = self.start_bridge(DATA_DIR=data)
+        self.assertEqual(b.get('/history')[0], 200)
+        answer = json.loads(b.get('/history.json')[2])
+        self.assertEqual((answer['enabled'], [t['title'] for t in answer['tracks']]), (True, ['Earlier']))
+        code, out = run_check(self.mpd.port, DATA_DIR=data)
+        self.assertIn('Listening history at /history: 1 track(s)', out)
+        self.assertIn('Scrobbling: off', out)
+
+    def test_history_off(self):
+        b = self.start_bridge(HISTORY='0')
+        self.assertEqual(json.loads(b.get('/history.json')[2]), {'enabled': False, 'tracks': []})
+
+    def test_radio_station_in_the_status(self):
+        b = self.start_bridge()
+        self.mpd.set_scenario('radio_artist_title')
+        self.assertEqual(b.now()[1]['station'], 'Radio X')
+        self.mpd.set_scenario('flac_hires')
+        self.assertEqual(b.now()[1]['station'], '')
+
+
 def spotify_event(port, **event):
     # librespot running spotify-event.py, with the event in its environment
     subprocess.run([sys.executable, os.path.join(ROOT, 'spotify-event.py'), f'http://127.0.0.1:{port}'],

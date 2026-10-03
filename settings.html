@@ -82,6 +82,10 @@
     #message.error { color: #fca5a5; }
 
     .address { margin-top: 28px; font-size: 13px; color: rgba(255,255,255,0.45); line-height: 1.5; }
+    .links { margin-top: 28px; text-align: center; font-size: 15px; }
+    .links a { color: rgba(255,255,255,0.7); text-decoration: none; margin: 0 10px; }
+    .links a:hover { color: #fff; }
+
     .address code {
       display: block; margin-top: 6px; padding: 10px 12px; border-radius: 10px;
       background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.8); word-break: break-all;
@@ -158,6 +162,8 @@
 
   <p class="address"><span data-i18n="address">Or, for one screen only, these options in its address:</span>
     <code id="address"></code></p>
+
+  <p class="links"><a href="/history" data-i18n="history">Listening history</a><a href="/" data-i18n="screen">Screen</a></p>
 </main>
 
 <script>
@@ -171,6 +177,7 @@
       size: 'Fit the screen', sizeHint: 'Otherwise, the size set below', reset: 'Defaults', save: 'Save',
       saved: 'Saved: the screens show it now', failed: 'Not saved: ',
       address: 'Or, for one screen only, these options in its address:',
+      history: 'Listening history', screen: 'Screen',
     },
     fr: {
       title: 'Réglages de l\'affichage', lead: 'Pour tous les écrans qui affichent la page. Enregistrés, ils s\'appliquent aussitôt.',
@@ -181,6 +188,7 @@
       size: 'S\'adapter à l\'écran', sizeHint: 'Sinon, la taille réglée ci-dessous', reset: 'Par défaut', save: 'Enregistrer',
       saved: 'Enregistré : les écrans l\'affichent maintenant', failed: 'Non enregistré : ',
       address: 'Ou, pour un seul écran, ces options dans son adresse :',
+      history: "Historique d'écoute", screen: 'Écran',
     },
   };
   const LANG = (navigator.language || '').toLowerCase().indexOf('fr') === 0 ? 'fr' : 'en';

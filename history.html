@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="google" content="notranslate">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0a0a">
+  <link rel="icon" href="/icon-192.png">
+  <title>Now Playing - History</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+      background: #0a0a0a;
+      color: rgba(255,255,255,0.9);
+      padding: max(20px, env(safe-area-inset-top)) 16px 40px;
+    }
+
+    main { max-width: 640px; margin: 0 auto; }
+
+    header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+    h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+    nav a { color: rgba(255,255,255,0.55); font-size: 15px; text-decoration: none; margin-left: 14px; }
+    nav a:hover { color: #fff; }
+
+    #now {
+      display: none; align-items: center; gap: 14px; padding: 14px; margin-bottom: 24px;
+      border-radius: 14px; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.1);
+    }
+    #now.visible { display: flex; }
+    #now .cover { width: 64px; height: 64px; }
+    .now-label {
+      display: flex; align-items: center; gap: 7px; font-size: 12px; letter-spacing: 1px;
+      text-transform: uppercase; color: rgba(255,255,255,0.55); margin-bottom: 4px;
+    }
+    .now-label::before {
+      content: ''; width: 7px; height: 7px; border-radius: 50%; background: #4ade80;
+      animation: pulse 2s infinite;
+    }
+    #now.paused .now-label::before { background: rgba(255,255,255,0.4); animation: none; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    h2 {
+      font-size: 13px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase;
+      color: rgba(255,255,255,0.45); margin: 22px 0 6px;
+    }
+
+    ol { list-style: none; }
+    li { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    li:last-child { border-bottom: 0; }
+
+    /* The cover shows once loaded; until then, or without one, a disc */
+    .cover img { width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.3s ease; }
+    .cover img.loaded { opacity: 1; }
+    .cover {
+      width: 48px; height: 48px; border-radius: 8px; flex-shrink: 0; overflow: hidden;
+      background: rgba(255,255,255,0.07) center / 45% no-repeat;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-opacity='0.35' stroke-width='1.5'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E");
+    }
+    .text { flex: 1; min-width: 0; }
+    .title, .details { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .title { font-size: 16px; font-weight: 600; }
+    .details { font-size: 14px; color: rgba(255,255,255,0.55); margin-top: 2px; }
+    .when { text-align: right; flex-shrink: 0; font-size: 13px; color: rgba(255,255,255,0.45); font-variant-numeric: tabular-nums; }
+    .source {
+      display: inline-block; margin-top: 4px; font-size: 11px; padding: 1px 7px; border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.18); color: rgba(255,255,255,0.6);
+    }
+
+    #empty { color: rgba(255,255,255,0.45); font-size: 15px; line-height: 1.5; padding: 30px 0; text-align: center; }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1 data-i18n="title">History</h1>
+    <nav><a href="/" data-i18n="screen">Screen</a><a href="/settings" data-i18n="settings">Settings</a></nav>
+  </header>
+
+  <div id="now">
+    <div class="cover"><img id="now-cover" alt=""></div>
+    <div class="text">
+      <div class="now-label" id="now-label" data-i18n="playing">Playing</div>
+      <div class="title" id="now-title"></div>
+      <div class="details" id="now-details"></div>
+    </div>
+  </div>
+
+  <div id="list"></div>
+  <p id="empty"></p>
+</main>
+
+<script>
+  const STRINGS = {
+    en: {
+      title: 'History', screen: 'Screen', settings: 'Settings', playing: 'Playing', paused: 'Paused',
+      today: 'Today', yesterday: 'Yesterday', radio: 'Radio',
+      empty: 'Nothing yet: tracks show up here once they have played for a while.',
+      off: 'The listening history is off (HISTORY=0).',
+    },
+    fr: {
+      title: 'Historique', screen: 'Écran', settings: 'Réglages', playing: 'En lecture', paused: 'En pause',
+      today: "Aujourd'hui", yesterday: 'Hier', radio: 'Radio',
+      empty: "Rien pour l'instant : les morceaux s'affichent ici une fois écoutés un moment.",
+      off: "L'historique d'écoute est désactivé (HISTORY=0).",
+    },
+  };
+  const LANG = (navigator.language || '').toLowerCase().indexOf('fr') === 0 ? 'fr' : 'en';
+  const T = STRINGS[LANG];
+  document.documentElement.lang = LANG;
+  document.title = 'Now Playing - ' + T.title;
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = T[el.dataset.i18n]; });
+
+  const SOURCES = { airplay: 'AirPlay', spotify: 'Spotify', demo: 'Demo' };
+
+  function element(tag, className, text) {
+    const el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text) el.textContent = text;
+    return el;
+  }
+
+  function showCover(img, src) {
+    img.classList.remove('loaded');
+    img.onload = () => img.classList.add('loaded');
+    if (src) img.src = src; else img.removeAttribute('src');
+  }
+
+  function cover(src) {
+    const box = element('div', 'cover');
+    const img = box.appendChild(element('img'));
+    img.alt = '';
+    img.loading = 'lazy';
+    showCover(img, src);
+    return box;
+  }
+
+  function details(track) {
+    return [track.artist, track.album && track.album !== track.station ? track.album : '']
+      .filter(part => part && part !== '—').join(' — ');
+  }
+
+  function day(date) {
+    const start = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const days = Math.round((start(new Date()) - start(date)) / 86400000);
+    if (days === 0) return T.today;
+    if (days === 1) return T.yesterday;
+    const text = date.toLocaleDateString(LANG, { weekday: 'long', day: 'numeric', month: 'long' });
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  function showHistory(answer) {
+    const list = document.getElementById('list');
+    list.textContent = '';
+    let group = null, label = null;
+    for (const track of answer.tracks) {
+      const date = new Date(track.at * 1000);
+      if (day(date) !== label) {
+        label = day(date);
+        list.appendChild(element('h2', '', label));
+        group = list.appendChild(element('ol'));
+      }
+      const row = element('li');
+      row.appendChild(cover(track.art));
+      const text = row.appendChild(element('div', 'text'));
+      text.appendChild(element('div', 'title', track.title));
+      text.appendChild(element('div', 'details', details(track) || track.station));
+      const when = row.appendChild(element('div', 'when',
+        date.toLocaleTimeString(LANG, { hour: '2-digit', minute: '2-digit' })));
+      const source = track.station ? T.radio : SOURCES[track.source];
+      if (source) {
+        when.appendChild(element('br'));
+        when.appendChild(element('span', 'source', source));
+      }
+      group.appendChild(row);
+    }
+    document.getElementById('empty').textContent =
+      !answer.enabled ? T.off : answer.tracks.length ? '' : T.empty;
+  }
+
+  function loadHistory() {
+    fetch('/history.json', { cache: 'no-store' }).then(res => res.json()).then(showHistory).catch(() => {});
+  }
+
+  // What plays now, live; the list again when the track changes (the one
+  // before is in it by then)
+  let nowTitle = null;
+  function showNow(d) {
+    const box = document.getElementById('now');
+    const on = !d.error && (d.state === 'play' || d.state === 'pause') && !!d.title;
+    box.classList.toggle('visible', on);
+    if (!on) return;
+    box.classList.toggle('paused', d.state === 'pause');
+    document.getElementById('now-label').textContent = d.state === 'play' ? T.playing : T.paused;
+    document.getElementById('now-title').textContent = d.title;
+    document.getElementById('now-details').textContent = details(d);
+    const img = document.getElementById('now-cover');
+    if ((d.art_url || '') !== (img.getAttribute('src') || '')) showCover(img, d.art_url);
+    if (nowTitle !== null && nowTitle !== d.title) loadHistory();
+    nowTitle = d.title;
+  }
+
+  loadHistory();
+  if (window.EventSource) {
+    new EventSource('/events').onmessage = e => showNow(JSON.parse(e.data));
+  } else {
+    fetch('/now').then(res => res.json()).then(showNow).catch(() => {});
+  }
+</script>
+</body>
+</html>

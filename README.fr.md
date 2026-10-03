@@ -42,6 +42,7 @@ Ni nginx ni paquet Python à installer - le pont n'utilise que la bibliothèque 
 - Ligne « À suivre » avec le prochain morceau de la file
 - Messages clairs quand mpd est injoignable ou demande un mot de passe, et indicateur « hors ligne » si le pont ne répond plus
 - Anglais et français, selon la langue du navigateur
+- Historique d'écoute : ce qui a été joué, par jour, quel que soit le lecteur ; envoi à ListenBrainz ou Last.fm (scrobbling) en option
 - Une page de réglages pour votre téléphone : langue, horloge, fond, taille, VU-mètres... avec un aperçu ; enregistrés, tous les écrans les affichent aussitôt
 - S'adapte à tout écran, du 800×480 à la 4K : sur un petit écran, l'affichage se réduit pour laisser sa place au texte ; sur un grand, il s'agrandit
 - Écrans verticaux (une TV posée sur le côté, le Raspberry Pi Touch Display 2, les téléphones) : pochette en haut, texte en dessous
@@ -116,7 +117,11 @@ Les réglages viennent des variables d'environnement ou d'un fichier `.env` plac
 | SHAIRPORT_PIPE | /tmp/shairport-sync-metadata | Tube de métadonnées de shairport-sync, pour AirPlay ; vide, AirPlay est coupé |
 | MPD_FIFO | /tmp/mpd.fifo | Sortie fifo de mpd, lue pour les VU-mètres ; vide, ils sont coupés |
 | SPOTIFY | 1 (activé) | Spotify Connect : ce que joue librespot (raspotify), d'après ses événements ; `0` désactive |
-| DATA_DIR | ce dossier | Où le pont enregistre les réglages d'affichage (`settings.json`) |
+| DATA_DIR | ce dossier | Où le pont enregistre les réglages d'affichage (`settings.json`) et l'historique d'écoute (`history.jsonl`) |
+| HISTORY | 1 (activé) | L'historique d'écoute ; `0` le coupe |
+| LISTENBRAINZ_TOKEN | vide (désactivé) | Scrobbling vers ListenBrainz : votre jeton utilisateur, voir [plus bas](#historique-découte) |
+| LASTFM_API_SECRET, LASTFM_SESSION_KEY | vide (désactivé) | Scrobbling vers Last.fm, avec `LASTFM_API_KEY`, voir [plus bas](#historique-découte) |
+| SCROBBLE_SOURCES | mpd,airplay | Ce qui est scrobblé : `mpd`, `airplay`, `spotify` |
 | SETTINGS_PAGE | 1 (activé) | La page de réglages ; `0` la coupe (les réglages enregistrés s'appliquent toujours) |
 | DEMO | vide | `1` pour le mode démo : morceaux inventés, sans mpd |
 
@@ -167,6 +172,17 @@ sudo systemctl restart raspotify
 ```
 
 Si le pont utilise un autre port, ou HTTPS, ajoutez son adresse après le programme : `LIBRESPOT_ONEVENT="/usr/local/bin/nowplaying-spotify-event https://127.0.0.1:8766"`. Le pont n'accepte ces événements que depuis sa propre machine ; `--check` indique si raspotify lance le programme, et `SPOTIFY=0` coupe Spotify. Les détails du morceau demandent librespot 0.5 ou plus récent ; un librespot lancé autrement prend le même programme avec `--onevent`.
+
+## Historique d'écoute
+
+http://localhost:8766/history liste ce qui a été joué, par jour, depuis mpd, AirPlay ou Spotify, avec le morceau en cours en haut. Un morceau compte une fois écouté la moitié de sa durée ou 4 minutes, comme sur Last.fm (30 s pour les morceaux d'une radio) : les morceaux passés ne comptent pas. L'historique reste sur la machine, dans `history.jsonl` dans `DATA_DIR` (les 1000 derniers morceaux) ; `HISTORY=0` le coupe.
+
+Ces écoutes peuvent aussi aller sur votre profil ListenBrainz ou Last.fm (scrobbling) :
+
+- **ListenBrainz** : copiez votre jeton utilisateur depuis https://listenbrainz.org/settings/ dans `.env`, en `LISTENBRAINZ_TOKEN=...`
+- **Last.fm** : créez un compte API sur https://www.last.fm/api/account/create (n'importe quel nom convient), mettez sa clé et son secret dans `.env`, en `LASTFM_API_KEY=...` et `LASTFM_API_SECRET=...`, puis lancez `python3 mpd-bridge.py --lastfm-login` : il vous donne une adresse où autoriser le pont, puis ajoute la clé de session à `.env`
+
+Redémarrez le pont ; `--check` indique sous quel nom il scrobble. Les écoutes qui ne partent pas (pas de réseau) repartent plus tard. Par défaut, les écoutes de mpd et d'AirPlay sont scrobblées : Spotify scrobble tout seul une fois relié à Last.fm, n'ajoutez donc `spotify` à `SCROBBLE_SOURCES` que s'il ne l'est pas. Si mpdscribble scrobble déjà mpd, retirez `mpd`.
 
 ## VU-mètres
 

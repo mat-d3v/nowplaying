@@ -42,6 +42,7 @@ No nginx and no Python packages required - the bridge only uses the standard lib
 - "Up next" line showing the next track in the queue
 - Clear messages when mpd is unreachable or needs a password, and an offline indicator when the bridge stops responding
 - English and French, following the browser's language
+- Listening history: what played, by day, whatever the player; scrobbling to ListenBrainz or Last.fm, as an option
 - A settings page for your phone: language, clock, background, size, VU meters... with a preview; saved, every screen shows them at once
 - Fits any screen, from 800×480 to 4K: small screens shrink the layout so the text keeps its room, big ones grow it
 - Upright screens (a TV on its side, the Raspberry Pi Touch Display 2, phones): artwork on top, text below
@@ -116,7 +117,11 @@ Settings come from environment variables or from a `.env` file next to `mpd-brid
 | SHAIRPORT_PIPE | /tmp/shairport-sync-metadata | shairport-sync's metadata pipe, for AirPlay; empty turns AirPlay off |
 | MPD_FIFO | /tmp/mpd.fifo | mpd's fifo output, read for the VU meters; empty turns them off |
 | SPOTIFY | 1 (on) | Spotify Connect: what librespot (raspotify) plays, from its events; `0` turns it off |
-| DATA_DIR | this folder | Where the bridge saves the display settings (`settings.json`) |
+| DATA_DIR | this folder | Where the bridge saves the display settings (`settings.json`) and the listening history (`history.jsonl`) |
+| HISTORY | 1 (on) | The listening history; `0` turns it off |
+| LISTENBRAINZ_TOKEN | empty (off) | Scrobbling to ListenBrainz: your user token, see [below](#listening-history) |
+| LASTFM_API_SECRET, LASTFM_SESSION_KEY | empty (off) | Scrobbling to Last.fm, with `LASTFM_API_KEY`, see [below](#listening-history) |
+| SCROBBLE_SOURCES | mpd,airplay | What gets scrobbled: `mpd`, `airplay`, `spotify` |
 | SETTINGS_PAGE | 1 (on) | The settings page; `0` turns it off (saved settings still apply) |
 | DEMO | empty | `1` for the demo mode: made-up tracks, no mpd needed |
 
@@ -167,6 +172,17 @@ sudo systemctl restart raspotify
 ```
 
 When the bridge uses another port, or HTTPS, add its address after the program: `LIBRESPOT_ONEVENT="/usr/local/bin/nowplaying-spotify-event https://127.0.0.1:8766"`. The bridge only takes these events from its own machine; `--check` says whether raspotify runs the program, and `SPOTIFY=0` turns Spotify off. Track details need librespot 0.5 or later; librespot started another way takes the same program as `--onevent`.
+
+## Listening history
+
+http://localhost:8766/history lists what played, by day, from mpd, AirPlay or Spotify, with the track playing now on top. A track counts once it has played for half its length or 4 minutes, like on Last.fm (30 s for a radio's songs): skipped tracks don't. The history stays on the machine, in `history.jsonl` in `DATA_DIR` (the last 1000 tracks); `HISTORY=0` turns it off.
+
+The same plays can go to your ListenBrainz or Last.fm profile (scrobbling):
+
+- **ListenBrainz**: copy your user token from https://listenbrainz.org/settings/ into `.env` as `LISTENBRAINZ_TOKEN=...`
+- **Last.fm**: create an API account at https://www.last.fm/api/account/create (any name will do), put its key and secret in `.env` as `LASTFM_API_KEY=...` and `LASTFM_API_SECRET=...`, then run `python3 mpd-bridge.py --lastfm-login`: it gives you an address where you allow the bridge, then adds the session key to `.env`
+
+Restart the bridge; `--check` says as whom it scrobbles. Plays that can't be sent (no network) go again later. By default, mpd's and AirPlay's plays are scrobbled: Spotify scrobbles by itself once linked to Last.fm, so add `spotify` to `SCROBBLE_SOURCES` only if it isn't. If mpdscribble already scrobbles mpd, leave `mpd` out.
 
 ## VU meters
 
