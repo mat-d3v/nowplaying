@@ -318,11 +318,12 @@ def get_status():
         'next_artist': next_artist
     }
 
+PAGE = ('index.html', 'text/html; charset=utf-8')
 STATIC_FILES = {
-    '/': ('index.html', 'text/html; charset=utf-8'),
-    '/?lang=fr': ('index.fr.html', 'text/html; charset=utf-8'),
-    '/index.html': ('index.html', 'text/html; charset=utf-8'),
-    '/index.fr.html': ('index.fr.html', 'text/html; charset=utf-8'),
+    '/': PAGE,
+    '/index.html': PAGE,
+    # Same page: it switches to French from this path (or ?lang=fr)
+    '/index.fr.html': PAGE,
     '/hires.svg': ('hires.svg', 'image/svg+xml'),
     '/apple-touch-icon.png': ('assets/apple-touch-icon.png', 'image/png'),
     '/touch-icon-v2.png': ('assets/touch-icon-v2.png', 'image/png'),
@@ -330,7 +331,8 @@ STATIC_FILES = {
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path == '/now':
+        url = urllib.parse.urlparse(self.path)
+        if url.path == '/now':
             try:
                 data = get_status()
                 self.send_response(200)
@@ -342,8 +344,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(500)
                 self.end_headers()
                 self.wfile.write(str(e).encode())
-        elif self.path.startswith('/art?'):
-            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        elif url.path == '/art':
+            qs = urllib.parse.parse_qs(url.query)
             uri = qs.get('file', [''])[0]
             data, mime = get_mpd_art(uri) if uri else (None, '')
             if data:
@@ -356,8 +358,8 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.send_response(404)
                 self.end_headers()
-        elif self.path in STATIC_FILES:
-            filename, content_type = STATIC_FILES[self.path]
+        elif url.path in STATIC_FILES:
+            filename, content_type = STATIC_FILES[url.path]
             filepath = os.path.join(SCRIPT_DIR, filename)
             try:
                 with open(filepath, 'rb') as f:

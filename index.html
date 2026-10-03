@@ -321,7 +321,7 @@
 <div id="vignette"></div>
 <div id="text-overlay"></div>
 <div id="clock"></div>
-<div id="offline-badge"><span class="offline-dot"></span>Offline</div>
+<div id="offline-badge"><span class="offline-dot"></span><span data-i18n="offline">Offline</span></div>
 
 <div id="content" style="display:none">
   <div id="artwork-container">
@@ -336,7 +336,7 @@
         <line x1="2" y1="12" x2="5" y2="12"/>
         <line x1="19" y1="12" x2="22" y2="12"/>
       </svg>
-      <span>No artwork</span>
+      <span data-i18n="noArtwork">No artwork</span>
     </div>
   </div>
   <div id="info">
@@ -357,18 +357,43 @@
     </div>
     <div id="status">
       <div class="dot" id="dot"></div>
-      <span id="status-text">Waiting</span>
+      <span id="status-text" data-i18n="waiting">Waiting</span>
     </div>
-    <div id="next-track"><span class="next-label">Up next</span><span id="next-track-text"></span></div>
+    <div id="next-track"><span class="next-label" data-i18n="upNext">Up next</span><span id="next-track-text"></span></div>
   </div>
 </div>
 
 <div id="nothing">
-  Nothing playing
-  <span>Waiting for playback...</span>
+  <div id="nothing-title" data-i18n="nothing">Nothing playing</div>
+  <span id="nothing-hint" data-i18n="waitingPlayback">Waiting for playback...</span>
 </div>
 
 <script>
+  // One page for both languages: ?lang=fr|en, /index.fr.html, otherwise the
+  // browser's own language
+  const STRINGS = {
+    en: {
+      offline: 'Offline', noArtwork: 'No artwork', waiting: 'Waiting', upNext: 'Up next',
+      nothing: 'Nothing playing', waitingPlayback: 'Waiting for playback...',
+      playing: 'Playing', paused: 'Paused',
+    },
+    fr: {
+      offline: 'Hors ligne', noArtwork: 'Aucune pochette', waiting: 'En attente', upNext: 'À suivre',
+      nothing: 'Aucune lecture en cours', waitingPlayback: 'En attente de lecture...',
+      playing: 'En lecture', paused: 'En pause',
+    },
+  };
+  const LANG = (function () {
+    const q = new URLSearchParams(location.search).get('lang');
+    if (q && Object.prototype.hasOwnProperty.call(STRINGS, q)) return q;
+    if (/\/index\.fr\.html$/.test(location.pathname)) return 'fr';
+    const nav = (navigator.languages && navigator.languages[0]) || navigator.language || '';
+    return nav.toLowerCase().indexOf('fr') === 0 ? 'fr' : 'en';
+  })();
+  const T = STRINGS[LANG];
+  document.documentElement.lang = LANG;
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = T[el.dataset.i18n]; });
+
   let currentTrackId = null;
   let bgActive = 'a';
   let playback = null;   // {elapsed, duration, playing, at}: state from the last poll
@@ -584,7 +609,7 @@
       document.getElementById('dot').className           = 'dot' + (isPlaying ? '' : ' paused');
       document.getElementById('content').className       = isPaused ? 'paused' : '';
       document.getElementById('vignette').className      = isPaused ? 'paused' : '';
-      document.getElementById('status-text').textContent = isPlaying ? 'Playing' : 'Paused';
+      document.getElementById('status-text').textContent = isPlaying ? T.playing : T.paused;
       document.getElementById('total-time').textContent   = formatTime(d.duration);
 
       // The ticker (tick) interpolates elapsed between polls for smooth progress
@@ -633,7 +658,7 @@
     document.getElementById('offline-badge').classList.toggle('visible', v);
     if (v) {
       document.getElementById('dot').className = 'dot offline';
-      document.getElementById('status-text').textContent = 'Offline';
+      document.getElementById('status-text').textContent = T.offline;
       if (playback) playback.playing = false; // freeze interpolated progress
     }
   }
@@ -676,12 +701,6 @@
       .catch(() => setTimeout(reloadWhenReachable, 60 * 1000));
   }
   setTimeout(reloadWhenReachable, 6 * 60 * 60 * 1000);
-
-  // Lang redirect
-  const params = new URLSearchParams(window.location.search);
-  if (params.get('lang') === 'fr') {
-    window.location.replace('/index.fr.html');
-  }
 
   poll();
   setInterval(poll, 2000);
