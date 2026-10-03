@@ -314,10 +314,15 @@ CODECS = {
 }
 
 def get_codec(file_url, audio):
-    # Streams don't say what they carry: no badge rather than a wrong one
-    if not file_url or '://' in file_url:
+    # From the file's extension. Addresses too: UPnP/DLNA servers and
+    # controllers (upmpdcli, BubbleUPnP, MinimServer...) give mpd an http
+    # address that usually ends like the file ("/01%20Song.flac?..."). A
+    # radio or an address without a known audio extension gets no badge,
+    # rather than a wrong one
+    if not file_url:
         return '', False
-    name = file_url.rsplit('/', 1)[-1]
+    url = '://' in file_url
+    name = (urllib.parse.urlparse(file_url).path if url else file_url).rsplit('/', 1)[-1]
     if '.' not in name:
         return '', False
     ext = name.rsplit('.', 1)[1].lower()
@@ -327,6 +332,8 @@ def get_codec(file_url, audio):
         if not audio:
             return 'M4A', False
         return ('AAC', False) if audio.split(':')[1:2] == ['f'] else ('ALAC', True)
+    if url and ext not in CODECS:
+        return '', False  # e.g. a playlist.m3u8
     return CODECS.get(ext, (ext.upper(), False))
 
 def display_title(song):

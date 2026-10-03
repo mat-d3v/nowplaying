@@ -87,6 +87,13 @@ SCENARIOS = {
         'song': {'file': 'http://radio.example/stream', 'Name': 'Radio X',
                  'Title': 'Daft Punk - One More Time'},
     },
+    # Played from a UPnP/DLNA server (upmpdcli, BubbleUPnP...): an http address
+    # with the tags, and a duration
+    'upnp_flac': {
+        'status': _playing('192000:24:2', duration='301.5'),
+        'song': {'file': 'http://192.168.1.10:9790/minimserver/*/Music/Night%20Ferries/01%20Pier.flac',
+                 'Title': 'Pier', 'Artist': 'June Avenue', 'Album': 'Night Ferries'},
+    },
     # Not something mpd sends: makes the bridge hit an unexpected error
     'bad_status': {
         'status': {'state': 'play', 'elapsed': 'oops', 'audio': '44100:16:2'},

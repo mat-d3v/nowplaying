@@ -27,7 +27,7 @@ Ni nginx ni paquet Python à installer - le pont n'utilise que la bibliothèque 
 
 - Dégradé de fond extrait des couleurs de la pochette (ou la pochette floutée, voir les [options d'affichage](#options-daffichage))
 - Pochettes directement via mpd (tags embarqués ou cover du dossier), via l'API iTunes Search pour les radios, Last.fm en secours optionnel
-- Badge du codec (FLAC, ALAC, MP3, AAC...) avec profondeur de bits et fréquence d'échantillonnage
+- Badge du codec (FLAC, ALAC, MP3, AAC...) avec profondeur de bits et fréquence d'échantillonnage, y compris pour les morceaux lus depuis un serveur UPnP/DLNA (upmpdcli, BubbleUPnP, MinimServer...)
 - Logo Hi-Res Audio pour les fichiers sans perte >= 88,2 kHz ou >= 24 bits, et pour le DSD
 - Radios : badge « En direct », « Artiste - Titre » séparé sur deux lignes, nom de la station en dessous
 - Les fichiers sans tags affichent leur nom de fichier

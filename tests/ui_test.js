@@ -106,6 +106,12 @@ async function waitFor(fn, expected, timeout = 5000) {
     const dsd = await view();
     check('DSD badges', [dsd.codec, dsd.quality, dsd.hires], ['DSF', 'DSD64', true]);
 
+    await setScenario('upnp_flac');
+    await waitFor(title, 'Pier');
+    const upnp = await view();
+    check('UPnP track (http address): FLAC badges, Hi-Res, progress, no Live badge',
+      [upnp.codec, upnp.quality, upnp.hires, upnp.live, upnp.progress], ['FLAC', '24bit / 192.0 kHz', true, false, true]);
+
     await setScenario('untagged');
     await waitFor(title, 'track01');
     const untagged = await view();

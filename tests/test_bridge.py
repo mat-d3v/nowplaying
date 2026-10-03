@@ -47,7 +47,14 @@ class CodecTest(unittest.TestCase):
             ('Music/a.dsf', 'dsd64:2'): ('DSF', True),
             ('Music/a.tak', '44100:16:2'): ('TAK', False),   # unknown: no bit depth / Hi-Res
             ('Music/Vol.1/track', '44100:16:2'): ('', False),
-            ('http://radio.example/stream.mp3', '44100:f:2'): ('', False),
+            # Addresses: UPnP/DLNA servers keep the file's extension
+            ('http://192.168.1.10:9790/minimserver/*/Music/01%20Song.flac', '192000:24:2'): ('FLAC', True),
+            ('http://192.168.1.10:8200/MediaItems/23.flac?quality=hi', '96000:24:2'): ('FLAC', True),
+            ('https://cloud.example/a/b.m4a', '44100:f:2'): ('AAC', False),
+            ('http://radio.example/stream.mp3', '44100:f:2'): ('MP3', False),
+            ('http://radio.example/stream', '44100:f:2'): ('', False),
+            ('http://radio.example/live.m3u8', '48000:f:2'): ('', False),
+            ('http://radio.example:8000/live.v2', '48000:f:2'): ('', False),
             ('', ''): ('', False),
         }
         for (uri, audio), expected in cases.items():
@@ -209,6 +216,8 @@ class StatusTest(BridgeTestCase):
             'dsf': dict(codec='DSF', format='dsd64:2'),
             'radio_artist_title': dict(title='One More Time', artist='Daft Punk', album='Radio X',
                                        codec='', stream=True, duration=0.0),
+            'upnp_flac': dict(title='Pier', artist='June Avenue', album='Night Ferries', codec='FLAC',
+                              lossless=True, format='192000:24:2', stream=True, duration=301.5),
             'radio_plain_title': dict(title='Morning show', artist='Radio X', album=''),
             'radio_name_only': dict(title='Radio X', artist='—'),
             'stopped': dict(state='stop', title='', format=''),
