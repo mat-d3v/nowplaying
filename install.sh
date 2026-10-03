@@ -24,7 +24,7 @@ RUN_USER="${SUDO_USER:-$(id -un)}"
 if [ ! -f "$ENV_FILE" ]; then
   cp "$SCRIPT_DIR/.env.example" "$ENV_FILE"
   if [ -z "$LASTFM_API_KEY" ]; then
-    read -r -p "Last.fm API key (optional, artwork for streams - press Enter to skip): " LASTFM_API_KEY || true
+    read -r -p "Last.fm API key (optional, more artwork besides iTunes - press Enter to skip): " LASTFM_API_KEY || true
   fi
   if [ -n "$LASTFM_API_KEY" ]; then
     sed -i "s|^LASTFM_API_KEY=.*|LASTFM_API_KEY=$LASTFM_API_KEY|" "$ENV_FILE"

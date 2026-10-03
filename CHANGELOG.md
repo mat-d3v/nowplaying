@@ -4,12 +4,14 @@
 
 ### Added
 
+- Artwork for tracks mpd has none for (no embedded picture, no cover file): looked up on the iTunes Search API, by album then by song, like radios. Only a result with the same names counts: no artwork rather than someone else's.
 - AirPlay: what shairport-sync plays shows up too (title, artist, album, artwork, progress, the device sending it), taking over from mpd while it plays.
 
 ### Changed
 
 - The page fits any screen: upright screens (a TV on its side, the Raspberry Pi Touch Display 2) show the artwork on top and the text below, small screens (800×480) shrink the layout so the text keeps its room, big ones (1440p, 4K) grow it. `scale` still sets the size by hand.
 - No progress bar stuck at 0:00 when the duration is unknown.
+- Online artwork lookups (iTunes, Last.fm) no longer hold up the title: it shows at once, the artwork follows. A lookup that failed, with no network yet, runs again 5 minutes later instead of never.
 
 ### Fixed
 

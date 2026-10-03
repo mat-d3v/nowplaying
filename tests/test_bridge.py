@@ -12,6 +12,7 @@ import ssl
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 import urllib.error
@@ -102,6 +103,87 @@ class BadgesTest(unittest.TestCase):
         for args, expected in cases:
             with self.subTest(args=args):
                 self.assertEqual(bridge.describe_badges(*args), expected)
+
+
+def album(name, artist, art):
+    return dict(collectionName=name, artistName=artist, artworkUrl100=f'https://is1.example/{art}/100x100bb.jpg')
+
+
+def song(name, artist, art):
+    return dict(trackName=name, artistName=artist, artworkUrl100=f'https://is1.example/{art}/100x100bb.jpg')
+
+
+def wait_until(check, timeout=5):
+    deadline = time.time() + timeout
+    while not check():
+        if time.time() > deadline:
+            raise AssertionError('timed out')
+        time.sleep(0.02)
+
+
+class OnlineArtTest(unittest.TestCase):
+    def test_names_compared_loosely(self):
+        for name, simple in [('Random Access Memories (10th Anniversary Edition)', 'random access memories'),
+                             ('Get Lucky - Single', 'get lucky'), ('Beyoncé', 'beyonce'), ('AC/DC', 'ac dc'),
+                             ('坂本龍一', '坂本龍一'), ('(Live)', 'live')]:
+            with self.subTest(name=name):
+                self.assertEqual(bridge.simplify(name), simple)
+        self.assertTrue(bridge.names_match('Daft Punk', 'Daft Punk feat. Pharrell Williams'))
+        self.assertFalse(bridge.names_match('Art', 'The Smart Band'))  # whole words only
+        self.assertFalse(bridge.names_match('Greatest Hits', 'Greatest Hits, Vol. 2', exact=True))
+        self.assertFalse(bridge.names_match('', 'Anything'))
+
+    def test_itunes_album_then_song(self):
+        searches = {
+            ('Daft Punk Discovery', 'album'): [album('Discovery', 'Some Cover Band', 'other'),
+                                               album('Discovery (Live)', 'Daft Punk', 'live'),
+                                               album('Discovery', 'Daft Punk', 'discovery')],
+            ('Various Artists Now 99', 'album'): [],
+            ('Daft Punk One More Time', 'song'): [song('One More Time (Radio Edit)', 'Daft Punk', 'omt')],
+        }
+        with mock.patch.object(bridge, 'itunes_search', side_effect=lambda *a: searches.get(a, [])):
+            # The album itself, rather than its live version or a namesake
+            self.assertEqual(bridge.itunes_art('Daft Punk', 'Aerodynamic', 'Discovery'),
+                             'https://is1.example/discovery/600x600bb.jpg')
+            # A compilation: its album artist, then the song by its artist
+            self.assertEqual(bridge.itunes_art('Daft Punk', 'One More Time', 'Now 99', 'Various Artists'),
+                             'https://is1.example/omt/600x600bb.jpg')
+            # Radios: the song
+            self.assertEqual(bridge.itunes_art('Daft Punk', 'One More Time'), 'https://is1.example/omt/600x600bb.jpg')
+            # Nobody of that name: no artwork rather than someone else's
+            self.assertEqual(bridge.itunes_art('Nobody', 'One More Time'), '')
+
+    def test_lookups_run_in_the_background(self):
+        release, calls = threading.Event(), []
+
+        def lookup():
+            calls.append(1)
+            release.wait(5)
+            return 'https://art.example/a.jpg'
+        key = ('Test', 'background', str(time.time()))
+        with mock.patch.object(bridge, 'publish_status') as published:
+            self.assertIsNone(bridge.online_art(key, lookup))  # started: not known yet
+            self.assertIsNone(bridge.online_art(key, lookup))  # still running: not started twice
+            release.set()
+            wait_until(lambda: published.called)  # the page gets the artwork
+            self.assertEqual(bridge.online_art(key, lookup), 'https://art.example/a.jpg')
+        self.assertEqual(len(calls), 1)
+
+    def test_failed_lookups_run_again_later(self):
+        calls = []
+
+        def failing():
+            calls.append(1)
+            raise OSError('no network yet')
+        key = ('Test', 'failing', str(time.time()))
+        with mock.patch.object(bridge, 'publish_status') as published, self.assertLogs('nowplaying', 'WARNING'):
+            bridge.online_art(key, failing)
+            wait_until(lambda: published.call_count == 1)
+            self.assertEqual(bridge.online_art(key, failing), '')  # not again right away
+            with mock.patch.object(bridge, 'RETRY_AFTER', 0):
+                self.assertIsNone(bridge.online_art(key, failing))
+                wait_until(lambda: published.call_count == 2)
+        self.assertEqual(len(calls), 2)
 
 
 class VersionTest(unittest.TestCase):
@@ -250,6 +332,38 @@ class StatusTest(BridgeTestCase):
         self.addCleanup(b.stop)
         status, data = b.now()
         self.assertEqual((status, data['error']), (503, 'mpd_unreachable'))
+
+
+class OnlineArtStatusTest(BridgeTestCase):
+    # The bridge's own get_status(), in this process, against the fake mpd
+    def setUp(self):
+        super().setUp()
+        patcher = mock.patch.multiple(bridge, MPD_HOST='127.0.0.1', MPD_PORT=self.mpd.port, MPD_PASSWORD='',
+                                      ITUNES_ENABLED=True, LASTFM_ENABLED=False, publish_status=mock.DEFAULT)
+        self.published = patcher.start()['publish_status']
+        self.addCleanup(patcher.stop)
+        self.addCleanup(self.close_mpd)
+
+    def close_mpd(self):
+        if bridge._mpd_sock:
+            bridge._mpd_sock.close()
+            bridge._mpd_sock = None
+
+    def test_title_first_then_artwork(self):
+        self.mpd.set_scenario('mp3_mad')  # no artwork in mpd
+        search = mock.Mock(return_value=[album('Alb', 'Art', 'alb')])
+        with mock.patch.object(bridge, 'itunes_search', search):
+            first = bridge.get_status()
+            self.assertEqual((first['title'], first['art_url']), ('Song MP3', ''))  # not held up
+            wait_until(lambda: self.published.called)
+            self.assertEqual(bridge.get_status()['art_url'], 'https://is1.example/alb/600x600bb.jpg')
+        search.assert_called_once_with('Art Alb', 'album')
+
+    def test_mpd_artwork_first(self):
+        search = mock.Mock(return_value=[])
+        with mock.patch.object(bridge, 'itunes_search', search):
+            self.assertTrue(bridge.get_status()['art_url'].startswith('/art?file='))
+        search.assert_not_called()
 
 
 def run_check(mpd_port, **env):

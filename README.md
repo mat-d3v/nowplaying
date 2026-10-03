@@ -26,7 +26,7 @@ No nginx and no Python packages required - the bridge only uses the standard lib
 ## What it looks like
 
 - Background gradient extracted from the album art colors (or the blurred artwork, see [display options](#display-options))
-- Album art straight from mpd (embedded tags or cover file in the folder), from the iTunes Search API for radios, Last.fm as an optional fallback
+- Album art straight from mpd (embedded tags or cover file in the folder). When mpd has none, and for radios, from the iTunes Search API (free, no key), or Last.fm with an API key. The title shows at once, the artwork follows
 - Codec badge (FLAC, ALAC, MP3, AAC...) with bit depth and sample rate, also for tracks played from a UPnP/DLNA server (upmpdcli, BubbleUPnP, MinimServer...)
 - Hi-Res Audio logo for lossless files >= 88.2 kHz or >= 24 bit, and for DSD
 - Radios: "Live" badge, "Artist - Title" split in two lines, station name below
@@ -103,7 +103,7 @@ Settings come from environment variables or from a `.env` file next to `mpd-brid
 | MPD_PORT | 6600 | MPD port |
 | MPD_PASSWORD | empty | MPD password, if `mpd.conf` sets one |
 | PORT | 8766 | Port of the bridge |
-| ITUNES_ARTWORK | 1 (on) | Radio artwork from the iTunes Search API. Only the artist and title of radio tracks are sent; `0` turns it off |
+| ITUNES_ARTWORK | 1 (on) | Artwork from the iTunes Search API, for radios and tracks mpd has no artwork for. Only the artist, title and album are sent; `0` turns it off |
 | LASTFM_API_KEY | empty (off) | Last.fm artwork fallback when mpd has none (needs artist and album tags) |
 | TLS_CERT, TLS_KEY | empty | Certificate and private key (PEM) to serve HTTPS, see [below](#https-keeping-the-screen-on-and-installing-the-app) |
 | ALSA_CARD | 0 | ALSA card read for the audio format when mpd doesn't report it |

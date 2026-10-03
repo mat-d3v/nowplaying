@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import socket, json, urllib.request, urllib.parse, re, os, threading, logging, queue, time, ssl, sys, stat
+import unicodedata
 
 VERSION = '1.0.0'  # with a matching section in CHANGELOG.md
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -36,7 +37,8 @@ TLS_KEY = os.environ.get('TLS_KEY', '') and os.path.join(SCRIPT_DIR, os.environ[
 LASTFM_KEY = os.environ.get('LASTFM_API_KEY', '')
 # Empty, or still the placeholder of older setups: no Last.fm lookups
 LASTFM_ENABLED = LASTFM_KEY not in ('', 'your_lastfm_api_key_here')
-# Radio artwork from the iTunes Search API (free, no key): on unless set to 0
+# Artwork from the iTunes Search API (free, no key) for radios, and tracks
+# mpd has none for: on unless set to 0
 ITUNES_ENABLED = os.environ.get('ITUNES_ARTWORK', '1').strip().lower() not in ('0', 'false', 'no', 'off')
 # Demo mode: made-up tracks (demo.py) instead of mpd
 DEMO = os.environ.get('DEMO', '').strip().lower() in ('1', 'true', 'yes', 'on')
@@ -53,8 +55,6 @@ import shairport
 if DEMO:
     import demo
 AIRPLAY = shairport.AirPlay() if SHAIRPORT_PIPE and not DEMO else None
-
-_art_cache = {}
 
 _mpd_sock = None
 _mpd_lock = threading.Lock()  # the HTTP server is multi-threaded, the mpd socket is shared
@@ -243,57 +243,91 @@ def get_alsa_format():
     except OSError:
         return ''  # no such card, or nothing playing on it
 
-def get_art_url(artist, album):
-    key = f"{artist}|{album}"
-    if key in _art_cache:
-        return _art_cache[key]
-    if len(_art_cache) > 500:
-        _art_cache.clear()  # simple cap to avoid unbounded growth
-    try:
-        q = urllib.parse.urlencode({
-            'method': 'album.getinfo',
-            'api_key': LASTFM_KEY,
-            'artist': artist,
-            'album': album,
-            'format': 'json'
-        })
-        url = f'https://ws.audioscrobbler.com/2.0/?{q}'
-        data = json.loads(urllib.request.urlopen(url, timeout=5).read())
-        images = data.get('album', {}).get('image', [])
-        art = ''
-        for img in reversed(images):
-            if img.get('#text'):
-                art = re.sub(r'/\d+x\d+/', '/', img['#text'])
-                break
-        _art_cache[key] = art
-        return art
-    except Exception as e:
-        log.warning('Last.fm lookup failed for %s / %s: %s', artist, album, e)
-    _art_cache[key] = ''
+def lastfm_art(artist, album):
+    # Last.fm's artwork for an album (needs LASTFM_API_KEY), '' if it has none
+    q = urllib.parse.urlencode({'method': 'album.getinfo', 'api_key': LASTFM_KEY, 'artist': artist,
+                                'album': album, 'format': 'json'})
+    with urllib.request.urlopen(f'https://ws.audioscrobbler.com/2.0/?{q}', timeout=5) as r:
+        data = json.loads(r.read())
+    for img in reversed(data.get('album', {}).get('image', [])):
+        if img.get('#text'):
+            return re.sub(r'/\d+x\d+/', '/', img['#text'])
     return ''
 
-_itunes_cache = {}
+def simplify(name):
+    # Names compared loosely: case, accents, punctuation, and notes such as
+    # "(Remastered 2011)", "[Deluxe Edition]" or " - Single" don't count
+    bare = re.sub(r'\s*(\([^)]*\)|\[[^\]]*\])', '', name)
+    bare = re.sub(r'\s+-\s+(single|ep)\s*$', '', bare, flags=re.I).strip() or name
+    bare = ''.join(c for c in unicodedata.normalize('NFKD', bare) if not unicodedata.combining(c))
+    return ' '.join(re.findall(r'[^\W_]+', bare.lower()))
 
-def get_itunes_art(artist, title):
-    # Artwork for radio tracks: radios send no album, so Last.fm's
-    # album.getinfo can't help, but iTunes finds the song from artist + title
-    key = f'{artist}|{title}'
-    if key in _itunes_cache:
-        return _itunes_cache[key]
-    if len(_itunes_cache) > 500:
-        _itunes_cache.clear()  # simple cap to avoid unbounded growth
-    art = ''
+def names_match(a, b, exact=False):
+    # "Daft Punk" matches "Daft Punk feat. Pharrell Williams" (whole words),
+    # unless exact
+    a, b = simplify(a), simplify(b)
+    if not a or not b:
+        return False
+    return a == b if exact else f' {a} ' in f' {b} ' or f' {b} ' in f' {a} '
+
+def itunes_search(term, entity):
+    q = urllib.parse.urlencode({'term': term, 'media': 'music', 'entity': entity, 'limit': 10})
+    with urllib.request.urlopen(f'https://itunes.apple.com/search?{q}', timeout=5) as r:
+        return json.loads(r.read()).get('results', [])
+
+def itunes_art(artist, title, album='', album_artist=''):
+    # Artwork from the iTunes Search API (free, no key): the album when the
+    # tags name one, else the song (radios send no album). Only a result
+    # whose names match counts: no artwork rather than someone else's
+    def pick(results, field, name, loose, by):
+        # The same name first ("Discovery" before "Discovery (Live)"), then
+        # a looser match, always by the same artist
+        results = [r for r in results if names_match(r.get('artistName', ''), by)]
+        same = [r for r in results if r.get(field, '').casefold() == name.casefold()]
+        close = [r for r in results if names_match(r.get(field, ''), name, exact=not loose)]
+        return ((same or close or [{}])[0]).get('artworkUrl100', '')
+
+    found = ''
+    if album:
+        by = album_artist or artist
+        found = pick(itunes_search(f'{by} {album}', 'album'), 'collectionName', album, False, by)
+    if not found and title:
+        found = pick(itunes_search(f'{artist} {title}', 'song'), 'trackName', title, True, artist)
+    # 100x100 thumbnails; the same address serves bigger sizes
+    return found.replace('/100x100bb.', '/600x600bb.')
+
+RETRY_AFTER = 300  # seconds before an online lookup that failed (no network yet?) runs again
+_online_art = {}   # lookup -> (artwork address or '', when); None as address: the lookup failed
+_online_art_running = set()
+_online_art_lock = threading.Lock()
+
+def online_art(key, lookup):
+    # Online artwork, without holding up the page: the address once known
+    # ('' when the service has none), None while lookup() runs in the
+    # background. When it's done the status is pushed again, and the page
+    # loads artwork that arrives after the title
+    with _online_art_lock:
+        known = _online_art.get(key)
+        if known and (known[0] is not None or time.monotonic() - known[1] < RETRY_AFTER):
+            return known[0] or ''
+        if key in _online_art_running:
+            return None
+        _online_art_running.add(key)
+    threading.Thread(target=_look_up_art, args=(key, lookup), daemon=True).start()
+    return None
+
+def _look_up_art(key, lookup):
     try:
-        q = urllib.parse.urlencode({'term': f'{artist} {title}', 'media': 'music', 'entity': 'song', 'limit': 1})
-        with urllib.request.urlopen(f'https://itunes.apple.com/search?{q}', timeout=5) as r:
-            results = json.loads(r.read()).get('results', [])
-        if results and results[0].get('artworkUrl100'):
-            # 100x100 thumbnails; the same URL serves larger sizes
-            art = results[0]['artworkUrl100'].replace('/100x100bb.', '/600x600bb.')
+        found = lookup()
     except Exception as e:
-        log.warning('iTunes artwork lookup failed for %s - %s: %s', artist, title, e)
-    _itunes_cache[key] = art
-    return art
+        log.warning('%s artwork lookup failed for %s: %s', key[0], ' / '.join(filter(None, key[1:])), e)
+        found = None
+    with _online_art_lock:
+        _online_art_running.discard(key)
+        if len(_online_art) > 500:
+            _online_art.clear()  # simple cap to avoid unbounded growth
+        _online_art[key] = (found, time.monotonic())
+    publish_status()  # with the artwork, or on to the next place to look
 
 def get_audio_format(status):
     # mpd's own "audio" field is the decoded source format ("44100:16:2",
@@ -374,18 +408,23 @@ def get_status():
         shown_artist = name  # a radio with no artist: the station instead
     fmt = get_audio_format(status) if state != 'stop' else ''
     codec, lossless = get_codec(file_url, status.get('audio', ''))
-    # Artwork: mpd itself first (embedded tags or cover file, no API key
-    # needed), then Last.fm (artist + album), then iTunes for radios
-    # (artist + title, as radios send no album)
+    # Artwork: mpd itself first (embedded tags or cover file), then online:
+    # Last.fm (with an API key), then iTunes (the album, or the song for
+    # radios). Online lookups run in the background: the title shows at
+    # once, the artwork follows
     art_url = ''
     if file_url and not stream:
         data, _ = get_mpd_art(file_url)
         if data:
             art_url = '/art?file=' + urllib.parse.quote(file_url, safe='')
+    looking = False
     if not art_url and artist and album and LASTFM_ENABLED:
-        art_url = get_art_url(artist, album)
-    if not art_url and stream and shown_artist and shown_artist != name and ITUNES_ENABLED:
-        art_url = get_itunes_art(shown_artist, title)
+        found = online_art(('Last.fm', artist, album), lambda: lastfm_art(artist, album))
+        looking, art_url = found is None, found or ''
+    if not art_url and not looking and shown_artist and shown_artist != name and ITUNES_ENABLED:
+        # A compilation is under its album artist ("Various Artists")
+        key = ('iTunes', shown_artist, title, album, currentsong.get('albumartist', ''))
+        art_url = online_art(key, lambda: itunes_art(*key[1:])) or ''
     # Next track in the queue (mpd exposes its position via 'nextsong')
     next_title = ''
     next_artist = ''
@@ -763,12 +802,13 @@ def check():
         try:
             found = fetch_json('https://itunes.apple.com/search?term=Daft+Punk+One+More+Time'
                                '&media=music&entity=song&limit=1').get('resultCount', 0)
-            report('ok' if found else 'warn', 'iTunes Search API: reachable (radio artwork)' if found
-                   else 'iTunes Search API: no answer to a test search')
+            report('ok' if found else 'warn', 'iTunes Search API: reachable (artwork for radios, and tracks '
+                   'mpd has none for)' if found else 'iTunes Search API: no answer to a test search')
         except Exception as e:
-            report('warn', f'iTunes Search API unreachable: {e}', 'Radios will show no artwork (ITUNES_ARTWORK=0 silences this)')
+            report('warn', f'iTunes Search API unreachable: {e}',
+                   'Radios and tracks without a cover will show no artwork (ITUNES_ARTWORK=0 silences this)')
     else:
-        report('--', 'iTunes radio artwork: off (ITUNES_ARTWORK=0)')
+        report('--', 'iTunes artwork: off (ITUNES_ARTWORK=0)')
     if LASTFM_ENABLED:
         try:
             q = urllib.parse.urlencode({'method': 'album.getinfo', 'api_key': LASTFM_KEY, 'artist': 'Daft Punk',
@@ -845,20 +885,34 @@ def _check_mpd(report):
     badges = ', '.join(describe_badges(fmt, codec, lossless))
     report('ok' if fmt else 'warn', f'Audio format {fmt} {source} -> badges: {badges or "none"}' if fmt
            else 'No audio format from mpd nor ALSA: no quality badge')
-    if '://' in file_url:
-        report('--', 'A stream: artwork comes from iTunes (see below)')
+    if '://' not in file_url:  # streams: no artwork in mpd
+        for cmd, where_from in (('readpicture', 'embedded in the file'), ('albumart', 'cover file in its folder')):
+            try:
+                data, mime = _fetch_mpd_binary(cmd, file_url)
+            except (OSError, MPDError, ValueError):
+                data = None
+            if data:
+                size = f'{len(data) // 1024} KB' if len(data) >= 1024 else f'{len(data)} bytes'
+                report('ok', f'Artwork: {where_from} ({mime or _sniff_mime(data)}, {size})')
+                return
+        report('--', 'No artwork in mpd for this track (embedded picture or cover file)')
+    if not (ITUNES_ENABLED or LASTFM_ENABLED):
+        report('--', 'Online artwork: off', 'ITUNES_ARTWORK=1 (or a LASTFM_API_KEY) looks for it online')
         return
-    for cmd, where_from in (('readpicture', 'embedded in the file'), ('albumart', 'cover file in its folder')):
-        try:
-            data, mime = _fetch_mpd_binary(cmd, file_url)
-        except (OSError, MPDError, ValueError):
-            data = None
-        if data:
-            size = f'{len(data) // 1024} KB' if len(data) >= 1024 else f'{len(data)} bytes'
-            report('ok', f'Artwork: {where_from} ({mime or _sniff_mime(data)}, {size})')
-            return
-    report('--', 'No artwork in mpd for this track (embedded picture or cover file)',
-           'Last.fm can fill in: set LASTFM_API_KEY' if not LASTFM_ENABLED else '')
+    # What the page gets online: the same lookups, waited for
+    try:
+        deadline = time.time() + 15
+        art = get_status()['art_url']
+        while not art and _online_art_running and time.time() < deadline:
+            time.sleep(0.2)
+            art = get_status()['art_url']
+    except (OSError, MPDError) as e:
+        report('warn', f'mpd stopped answering: {e}')
+        return
+    if art:
+        report('ok', f'Artwork: found online ({urllib.parse.urlparse(art).netloc})')
+    else:
+        report('--', 'No artwork online either for this track')
 
 class Server(ThreadingHTTPServer):
     tls = None  # ssl.SSLContext when serving HTTPS
@@ -897,7 +951,7 @@ def main():
         log.info('nowplaying %s on %s port %s, demo mode: made-up tracks, mpd is not used',
                  VERSION, 'HTTPS' if server.tls else 'HTTP', PORT)
     else:
-        log.info('nowplaying %s on %s port %s, mpd at %s:%s%s, Last.fm artwork %s, iTunes radio artwork %s',
+        log.info('nowplaying %s on %s port %s, mpd at %s:%s%s, Last.fm artwork %s, iTunes artwork %s',
                  VERSION, 'HTTPS' if server.tls else 'HTTP', PORT, MPD_HOST, MPD_PORT,
                  ' (with password)' if MPD_PASSWORD else '',
                  'on' if LASTFM_ENABLED else 'off', 'on' if ITUNES_ENABLED else 'off')
