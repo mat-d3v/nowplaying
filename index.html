@@ -310,8 +310,46 @@
       transform: scale(1.15);  /* hides the blur's faded edges */
     }
 
-    /* ===== Portrait (phone): artwork centered on top, info below ===== */
-    @media (max-width: 700px) {
+    /* ===== Portrait screens (a screen on its side, the Raspberry Pi Touch
+       Display 2): artwork on top, info below. Drawn for 720x1280, then
+       zoomed to the screen's size like the landscape layout (see fitScreen) */
+    @media (orientation: portrait) {
+      #content {
+        flex-direction: column;
+        align-items: center;
+        gap: 48px;
+        padding: 48px 40px;
+      }
+
+      #artwork,
+      #artwork-prev,
+      #artwork-fallback {
+        width: 560px;
+        height: 560px;
+      }
+
+      #info {
+        flex: none;
+        width: 100%;
+        text-align: center;
+      }
+
+      #title { font-size: 44px; margin-bottom: 10px; }
+      #artist { font-size: 28px; }
+      #album { font-size: 20px; }
+
+      #audio-info { justify-content: center; margin-bottom: 28px; }
+      #status { justify-content: center; margin-top: 24px; }
+      #next-track { text-align: center; }
+
+      /* The text is below the artwork: darken the bottom, not the right */
+      #text-overlay {
+        background: linear-gradient(to bottom, transparent 45%, rgba(0,0,0,0.35) 65%, rgba(0,0,0,0.45) 100%);
+      }
+    }
+
+    /* ===== Phones (portrait): sizes follow the screen's width ===== */
+    @media (orientation: portrait) and (max-width: 700px) {
       #content {
         flex-direction: column;
         align-items: center;
@@ -434,18 +472,39 @@
 
   // Display options, combined with &: ?clock=0 (hidden) or ?clock=12 (12-hour),
   // ?next=0 (no "Up next" line), ?bg=blur (blurred artwork as the background),
-  // ?scale=1.5 (everything bigger, from 0.5 to 3), ?shift=0 (no burn-in protection)
+  // ?scale=1.5 (size by hand, from 0.5 to 3, instead of fitting the screen),
+  // ?shift=0 (no burn-in protection)
   const OPTIONS   = new URLSearchParams(location.search);
   const CLOCK_12H = OPTIONS.get('clock') === '12';
   const SHOW_NEXT = OPTIONS.get('next') !== '0';
   const BG_BLUR   = OPTIONS.get('bg') === 'blur';
-  const SCALE     = Math.min(3, Math.max(0.5, parseFloat(OPTIONS.get('scale')) || 1));
+  const SCALE     = parseFloat(OPTIONS.get('scale'));  // NaN: fit the screen
   document.body.classList.toggle('no-clock', OPTIONS.get('clock') === '0');
   document.body.classList.toggle('bg-blur', BG_BLUR);
-  // zoom scales sizes but not percentages: the layout still fits the screen
-  if (SCALE !== 1) {
-    ['content', 'clock', 'offline-badge', 'nothing'].forEach(id => { document.getElementById(id).style.zoom = SCALE; });
+
+  // Size: the layouts are drawn for a 1920x1080 screen (720x1280 upright).
+  // Smaller screens shrink them, so the text keeps its room next to the
+  // artwork; bigger ones (1440p, 4K) grow them. Phones have their own
+  // layout, sized from their width
+  function screenScale() {
+    if (SCALE > 0) return Math.min(3, Math.max(0.5, SCALE));
+    const w = innerWidth, h = innerHeight;
+    let fit;
+    if (matchMedia('(orientation: portrait)').matches) {
+      fit = w <= 700 ? 1 : Math.min(w / 720, h / 1280);
+    } else {
+      fit = Math.max(Math.min(w / 1920, h / 1080), Math.min(1, w / 1100, h / 620));
+    }
+    return Math.min(3, Math.max(0.3, fit));
   }
+  // zoom scales sizes but not percentages: the layout still fits the screen
+  function fitScreen() {
+    const zoom = screenScale();
+    ['content', 'clock', 'offline-badge', 'nothing'].forEach(id => {
+      document.getElementById(id).style.zoom = zoom === 1 ? '' : zoom;
+    });
+  }
+  fitScreen();
 
   // Burn-in protection: every 3 minutes, what's drawn on top moves to the
   // next of these offsets around its place, over 4 s (?shift=0 turns it off)
@@ -510,11 +569,13 @@
     });
   }
 
-  // Long titles: recompute the marquee when the screen size changes (rotation)
+  // The screen size changed (rotation): fit the layout to it again, then
+  // recompute the marquee of long titles
   let resizeTimer = null;
   window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
+      fitScreen();
       ['title', 'artist', 'album'].forEach(id => setupMarquee(document.getElementById(id)));
     }, 200);
   });

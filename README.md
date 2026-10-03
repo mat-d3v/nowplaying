@@ -40,7 +40,8 @@ No nginx and no Python packages required - the bridge only uses the standard lib
 - "Up next" line showing the next track in the queue
 - Clear messages when mpd is unreachable or needs a password, and an offline indicator when the bridge stops responding
 - English and French, following the browser's language
-- Responsive portrait layout for phones (iOS and Android): artwork centered on top, clock hidden
+- Fits any screen, from 800×480 to 4K: small screens shrink the layout so the text keeps its room, big ones grow it
+- Upright screens (a TV on its side, the Raspberry Pi Touch Display 2, phones): artwork on top, text below
 - Full-screen app from the home screen (on Android, this needs HTTPS or localhost), with Screen Wake Lock to keep the screen on (HTTPS or localhost too, see [below](#https-keeping-the-screen-on-and-installing-the-app))
 
 ## Requirements
@@ -89,7 +90,7 @@ Add them to the URL, combined with `&` - for example http://localhost:8766/?bg=b
 | `clock=12` | 12-hour clock |
 | `next=0` | Hide the "Up next" line |
 | `bg=blur` | Blurred artwork as the background, instead of the color gradient |
-| `scale=1.5` | Everything bigger, for a screen seen from afar (from `0.5` to `3`) |
+| `scale=1.5` | Size set by hand (from `0.5` to `3`), e.g. bigger for a screen seen from afar. By default, the page fits itself to the screen |
 | `shift=0` | No burn-in protection. By default, what's on screen drifts by a few pixels every 3 minutes, too slowly to notice, so OLED screens don't keep a ghost of it |
 
 ## Configuration
@@ -188,7 +189,7 @@ On Raspberry Pi OS with desktop:
    ```
 
    (on older releases, the command is `chromium-browser`)
-4. Rotate the screen if needed: Preferences > Screen Configuration
+4. Rotate the screen if needed: Preferences > Screen Configuration. Upright, the page shows the artwork on top and the text below
 
 The page comes from `localhost` there, so the Wake Lock works without HTTPS.
 

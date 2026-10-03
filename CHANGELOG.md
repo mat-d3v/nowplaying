@@ -8,6 +8,7 @@
 
 ### Changed
 
+- The page fits any screen: upright screens (a TV on its side, the Raspberry Pi Touch Display 2) show the artwork on top and the text below, small screens (800×480) shrink the layout so the text keeps its room, big ones (1440p, 4K) grow it. `scale` still sets the size by hand.
 - No progress bar stuck at 0:00 when the duration is unknown.
 
 ## 1.0.0 - 2026-10-03

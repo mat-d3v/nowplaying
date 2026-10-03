@@ -40,7 +40,8 @@ Ni nginx ni paquet Python à installer - le pont n'utilise que la bibliothèque 
 - Ligne « À suivre » avec le prochain morceau de la file
 - Messages clairs quand mpd est injoignable ou demande un mot de passe, et indicateur « hors ligne » si le pont ne répond plus
 - Anglais et français, selon la langue du navigateur
-- Mise en page portrait adaptée aux téléphones (iOS et Android) : pochette centrée en haut, horloge masquée
+- S'adapte à tout écran, du 800×480 à la 4K : sur un petit écran, l'affichage se réduit pour laisser sa place au texte ; sur un grand, il s'agrandit
+- Écrans verticaux (une TV posée sur le côté, le Raspberry Pi Touch Display 2, les téléphones) : pochette en haut, texte en dessous
 - Appli plein écran depuis l'écran d'accueil (sur Android, il faut HTTPS ou localhost), avec Wake Lock pour garder l'écran allumé (HTTPS ou localhost aussi, voir plus bas)
 
 ## Prérequis
@@ -89,7 +90,7 @@ Teste la connexion à mpd et son mot de passe, le format et la pochette du morce
 | `clock=12` | Horloge sur 12 heures |
 | `next=0` | Masque la ligne « À suivre » |
 | `bg=blur` | Pochette floutée en fond, au lieu du dégradé de couleurs |
-| `scale=1.5` | Tout en plus grand, pour un écran vu de loin (de `0.5` à `3`) |
+| `scale=1.5` | Taille réglée à la main (de `0.5` à `3`), par exemple plus grand pour un écran vu de loin. Par défaut, la page s'adapte à l'écran |
 | `shift=0` | Sans protection contre le marquage. Par défaut, l'affichage se décale de quelques pixels toutes les 3 minutes, trop lentement pour s'en apercevoir, pour que les écrans OLED n'en gardent pas la trace |
 
 ## Configuration
@@ -188,7 +189,7 @@ Sur Raspberry Pi OS avec bureau :
    ```
 
    (sur les versions plus anciennes, la commande est `chromium-browser`)
-4. Faites pivoter l'écran si besoin : Préférences > Screen Configuration
+4. Faites pivoter l'écran si besoin : Préférences > Screen Configuration. À la verticale, la page affiche la pochette en haut et le texte en dessous
 
 La page vient de `localhost`, le Wake Lock fonctionne donc sans HTTPS.
 

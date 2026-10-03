@@ -162,6 +162,28 @@ async function waitFor(fn, expected, timeout = 5000) {
         document.documentElement.scrollWidth <= document.documentElement.clientWidth]), [width, true]);
     }
 
+    // Any screen: upright ones stack the artwork over the text, small ones
+    // shrink the layout (the text keeps its room), big ones grow it
+    const layoutOn = async (width, height) => {
+      const sized = await browser.newPage({ viewport: { width, height } });
+      await sized.goto(BASE + '/');
+      await sleep(1500);
+      const layout = await sized.evaluate(() => {
+        const art = document.getElementById('artwork').getBoundingClientRect();
+        const info = document.getElementById('info').getBoundingClientRect();
+        return [Math.round(art.width), art.bottom <= info.top ? 'column' : 'row',
+          Math.min(art.top, info.top) >= 0 && Math.max(art.bottom, info.bottom) <= innerHeight
+            && Math.max(art.right, info.right) <= innerWidth];
+      });
+      await sized.close();
+      return layout;
+    };
+    for (const [width, height, art, layout] of [[720, 1280, 560, 'column'], [1080, 1920, 840, 'column'],
+      [390, 844, 242, 'column'], [800, 480, 276, 'row'], [3840, 2160, 760, 'row']]) {
+      check(`${width}x${height}: ${layout}, artwork ${art} px, all on screen`, await layoutOn(width, height),
+        [art, layout, true]);
+    }
+
     // AirPlay (shairport-sync) takes over while it plays, then mpd comes back
     airplay('play');
     check('AirPlay shown over mpd', await waitFor(title, 'Harbor Lights', 3000), 'Harbor Lights');
