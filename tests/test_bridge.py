@@ -60,6 +60,7 @@ class CodecTest(unittest.TestCase):
             # ...or in their parameters, Qobuz's own addresses with a number
             ('http://192.168.1.20:49149/qobuz/track?trackId=12&ext=.flac', '96000:24:2'): ('FLAC', True),
             ('http://192.168.1.20:8080/stream/12?format=flac', '44100:16:2'): ('FLAC', True),
+            ('http://192.168.1.20:9090/qobuz/track/12/flac', '96000:24:2'): ('FLAC', True),
             ('https://streaming-qobuz-std.akamaized.net/file?uid=1&fmt=27', '192000:24:2'): ('FLAC', True),
             ('https://streaming-qobuz-std.akamaized.net/file?uid=1&fmt=5', '44100:f:2'): ('MP3', False),
             # An address that says nothing: integer samples at 88.2 kHz or

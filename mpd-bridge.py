@@ -399,6 +399,9 @@ def _extension(file_url):
     for text in [url.path] + [value for _, value in params]:
         if _known(ext_of(text)):
             return ext_of(text)
+    last = url.path.rstrip('/').rsplit('/', 1)[-1].lower()
+    if last in CODECS:  # ".../format/flac"
+        return last
     for name, value in params:
         if name.lower() in ('format', 'fmt', 'ext', 'codec') and _known(value.lower().lstrip('.')):
             return value.lower().lstrip('.')
