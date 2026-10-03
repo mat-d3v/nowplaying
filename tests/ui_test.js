@@ -267,7 +267,9 @@ async function waitFor(fn, expected, timeout = 5000) {
       }
     };
     check('a screen shows it right away (12-hour clock)', await waitFor(clockFormat(kiosk), '12h'), '12h');
-    check('...but not one whose address says otherwise', await clockFormat(pinned)(), '24h');
+    check('...but not one whose address says otherwise (no reload either)', await pinned.evaluate(() =>
+      [document.getElementById('clock').textContent.length === 5, performance.getEntriesByType('navigation')[0].type]),
+    [true, 'navigate']);
     await phone.click('#reset');
     await phone.click('#save');
     check('back to the defaults', await waitFor(clockFormat(kiosk), '24h'), '24h');

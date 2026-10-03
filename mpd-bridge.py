@@ -494,6 +494,7 @@ def get_status():
     }
 
 _mpd_problem = None  # last mpd error logged, so each change is logged once
+_mpd_problem_lock = threading.Lock()  # pages ask at the same time: logged once all the same
 PROBLEMS = {'mpd_unreachable': 'unreachable', 'mpd_password': 'refused access (check MPD_PASSWORD)',
             'mpd_error': 'answered with an error'}
 
@@ -521,14 +522,16 @@ def status_or_error():
     except OSError as e:  # refused, timed out, closed...
         problem = ('mpd_unreachable', str(e) or e.__class__.__name__)
     else:
-        if _mpd_problem:
-            log.info('mpd at %s:%s is back', MPD_HOST, MPD_PORT)
-            _mpd_problem = None
+        with _mpd_problem_lock:
+            if _mpd_problem:
+                log.info('mpd at %s:%s is back', MPD_HOST, MPD_PORT)
+                _mpd_problem = None
         if paused and data['state'] != 'play':
             return paused[0], 200
         return data, 200
-    if problem != _mpd_problem:
-        log.warning('mpd at %s:%s %s: %s', MPD_HOST, MPD_PORT, PROBLEMS[problem[0]], problem[1])
+    with _mpd_problem_lock:
+        if problem[0] != (_mpd_problem or ('',))[0]:  # a new kind of problem, not each new wording
+            log.warning('mpd at %s:%s %s: %s', MPD_HOST, MPD_PORT, PROBLEMS[problem[0]], problem[1])
         _mpd_problem = problem
     if paused:
         return paused[0], 200  # paused AirPlay or Spotify beats an mpd error
@@ -607,6 +610,8 @@ class Broadcaster:
 events = Broadcaster()
 IDLE_REFRESH = 55  # seconds without news before checking the idle connection
 
+_publish_lock = threading.Lock()  # one at a time: the history sees them in order
+
 def publish_status():
     # The current status (or mpd's error) to the listening history, and to
     # the pages listening. Never raises: the watcher thread must outlive any
@@ -614,17 +619,18 @@ def publish_status():
     # and freeze
     if not (LISTENING or events.has_clients()):
         return
-    try:
-        status = status_or_error()[0]
-    except Exception:
-        log.exception('cannot build the status for /events')
-        return
-    if LISTENING:
+    with _publish_lock:
         try:
-            LISTENING.observe(status)
+            status = status_or_error()[0]
         except Exception:
-            log.exception('listening history failed')
-    events.publish(status)
+            log.exception('cannot build the status for /events')
+            return
+        if LISTENING:
+            try:
+                LISTENING.observe(status)
+            except Exception:
+                log.exception('listening history failed')
+        events.publish(status)
 
 def watch_mpd():
     # mpd's "idle" command blocks until something changes (track, play/pause,
@@ -780,7 +786,7 @@ class Handler(BaseHTTPRequestHandler):
                 # The saved display settings, in the page itself: they apply
                 # from the start (<, written \u003c, can't end the script)
                 saved = json.dumps(load_display()).replace('<', '\\u003c')
-                data = data.replace(b'/*display-settings*/{}', saved.encode(), 1)
+                data = data.replace(b'/*display-settings*/null', saved.encode(), 1)
             self.send_response(200)
             self.send_header('Content-Type', content_type)
             if content_type.startswith('text/html'):

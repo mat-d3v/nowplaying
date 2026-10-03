@@ -671,7 +671,7 @@ class DisplaySettingsTest(BridgeTestCase):
         with open(os.path.join(b.data, 'settings.json')) as f:
             self.assertEqual(json.load(f), self.SETTINGS)
         # In the page itself, so they apply from the start
-        self.assertIn(f'const SAVED = {json.dumps(self.SETTINGS)};', b.get('/')[2].decode())
+        self.assertIn(f'const SERVED = {json.dumps(self.SETTINGS)};', b.get('/')[2].decode())
 
     def test_refused(self):
         b = self.start_bridge()

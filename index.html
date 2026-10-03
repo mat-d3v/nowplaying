@@ -455,8 +455,10 @@
 
 <script>
   // Display settings saved from the settings page (/settings), filled in by
-  // the bridge as it serves this page; the page's address wins over them
-  const SAVED = /*display-settings*/{};
+  // the bridge as it serves this page (null: served some other way); the
+  // page's address wins over them
+  const SERVED = /*display-settings*/null;
+  const SAVED = SERVED || {};
   const URL_OPTIONS = new URLSearchParams(location.search);
   const OPTIONS = {
     get: name => URL_OPTIONS.has(name) ? URL_OPTIONS.get(name)
@@ -1048,8 +1050,21 @@
   if (window.EventSource) {
     const es = new EventSource(EVENTS_ENDPOINT + (VU ? '?vu=1' : ''));
     es.addEventListener('levels', onLevels);
-    // New display settings saved: show them (the bridge is there, it just said so)
-    es.addEventListener('settings', () => location.reload());
+    // New display settings saved: show them, if this screen's address
+    // doesn't already set what changed (the bridge is there, it just said so)
+    const DEFAULTS = { lang: '', clock: '24', bg: 'glow', next: '1', vu: '0', shift: '1', scale: '' };
+    const setting = (settings, name) => name in settings ? settings[name] : DEFAULTS[name];
+    const showSettings = saved => {
+      if (Object.keys(DEFAULTS).some(name => !URL_OPTIONS.has(name) && setting(saved, name) !== setting(SAVED, name))) {
+        location.reload();
+      }
+    };
+    es.addEventListener('settings', e => showSettings(JSON.parse(e.data)));
+    // Settings saved while this page was loading, or while the bridge was
+    // away, came with no event: ask each time the stream (re)opens
+    es.addEventListener('open', () => {
+      if (SERVED) fetch('/display', { cache: 'no-store' }).then(res => res.json()).then(showSettings).catch(() => {});
+    });
     es.onmessage = e => {
       eventsUp = true;
       failCount = 0;
