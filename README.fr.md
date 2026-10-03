@@ -83,6 +83,8 @@ Teste la connexion à mpd et son mot de passe, le format et la pochette du morce
 | `clock=12` | Horloge sur 12 heures |
 | `next=0` | Masque la ligne « À suivre » |
 | `bg=blur` | Pochette floutée en fond, au lieu du dégradé de couleurs |
+| `scale=1.5` | Tout en plus grand, pour un écran vu de loin (de `0.5` à `3`) |
+| `shift=0` | Sans protection contre le marquage. Par défaut, l'affichage se décale de quelques pixels toutes les 3 minutes, trop lentement pour s'en apercevoir, pour que les écrans OLED n'en gardent pas la trace |
 
 ## Configuration
 

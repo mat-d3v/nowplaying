@@ -83,6 +83,8 @@ Add them to the URL, combined with `&` - for example http://localhost:8766/?bg=b
 | `clock=12` | 12-hour clock |
 | `next=0` | Hide the "Up next" line |
 | `bg=blur` | Blurred artwork as the background, instead of the color gradient |
+| `scale=1.5` | Everything bigger, for a screen seen from afar (from `0.5` to `3`) |
+| `shift=0` | No burn-in protection. By default, what's on screen drifts by a few pixels every 3 minutes, too slowly to notice, so OLED screens don't keep a ghost of it |
 
 ## Configuration
 

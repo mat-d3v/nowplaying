@@ -134,6 +134,25 @@ async function waitFor(fn, expected, timeout = 5000) {
     await sleep(800);
     check('?lang=en wins over the browser', await fr.evaluate(() => document.documentElement.lang), 'en');
 
+    // Burn-in protection: one shift moves what's drawn by a few pixels
+    await setScenario('flac_hires');
+    await waitFor(title, 'Song');
+    await page.evaluate(() => shiftScreen());
+    await sleep(4500);  // the 4 s transition
+    check('burn-in protection shifts the content and the clock', await page.evaluate(() =>
+      ['content', 'clock'].map(id => getComputedStyle(document.getElementById(id)).transform)),
+    ['matrix(1, 0, 0, 1, 4, -3)', 'matrix(1, 0, 0, 1, 4, -3)']);
+
+    // ?scale: everything bigger, still within the screen; junk ignored, capped at 3
+    const scaled = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+    for (const [query, width] of [['?scale=1.5', 570], ['?scale=oops', 380], ['?scale=10', 1140]]) {
+      await scaled.goto(BASE + '/' + query);
+      await sleep(2000);  // artwork loaded, its fade-in done
+      check(`${query}: artwork ${width} px wide, no sideways overflow`, await scaled.evaluate(() => [
+        Math.round(document.getElementById('artwork').getBoundingClientRect().width),
+        document.documentElement.scrollWidth <= document.documentElement.clientWidth]), [width, true]);
+    }
+
     mpd.kill();
     check('mpd down: explained on the page', await waitFor(nothing, 'MPD unreachable'), 'MPD unreachable');
 
