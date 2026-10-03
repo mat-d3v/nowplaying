@@ -29,6 +29,7 @@ Ni nginx ni paquet Python à installer - le pont n'utilise que la bibliothèque 
 - Pochettes directement via mpd (tags embarqués ou cover du dossier). Quand mpd n'en a pas, et pour les radios, via l'API iTunes Search (gratuite, sans clé), ou Last.fm avec une clé API. Le titre s'affiche tout de suite, la pochette suit
 - Badge du codec (FLAC, ALAC, MP3, AAC...) avec profondeur de bits et fréquence d'échantillonnage, y compris pour les morceaux lus depuis un serveur UPnP/DLNA (upmpdcli, BubbleUPnP, MinimServer...)
 - Logo Hi-Res Audio pour les fichiers sans perte >= 88,2 kHz ou >= 24 bits, et pour le DSD
+- VU-mètres en option : deux aiguilles qui bougent avec ce que joue mpd, avec un voyant de crête
 - Radios : badge « En direct », « Artiste - Titre » séparé sur deux lignes, nom de la station en dessous
 - Les fichiers sans tags affichent leur nom de fichier
 - AirPlay : ce qui est joué depuis un iPhone, un iPad ou un Mac via shairport-sync s'affiche aussi
@@ -92,6 +93,7 @@ Teste la connexion à mpd et son mot de passe, le format et la pochette du morce
 | `next=0` | Masque la ligne « À suivre » |
 | `bg=blur` | Pochette floutée en fond, au lieu du dégradé de couleurs |
 | `scale=1.5` | Taille réglée à la main (de `0.5` à `3`), par exemple plus grand pour un écran vu de loin. Par défaut, la page s'adapte à l'écran |
+| `vu=1` | Deux VU-mètres sous les badges, qui bougent avec ce que joue mpd (il faut une sortie « fifo » dans `mpd.conf`, voir [VU-mètres](#vu-mètres)) |
 | `shift=0` | Sans protection contre le marquage. Par défaut, l'affichage se décale de quelques pixels toutes les 3 minutes, trop lentement pour s'en apercevoir, pour que les écrans OLED n'en gardent pas la trace |
 
 ## Configuration
@@ -109,6 +111,7 @@ Les réglages viennent des variables d'environnement ou d'un fichier `.env` plac
 | TLS_CERT, TLS_KEY | vide | Certificat et clé privée (PEM) pour servir en HTTPS, voir plus bas |
 | ALSA_CARD | 0 | Carte ALSA lue pour le format audio quand mpd ne le donne pas |
 | SHAIRPORT_PIPE | /tmp/shairport-sync-metadata | Tube de métadonnées de shairport-sync, pour AirPlay ; vide, AirPlay est coupé |
+| MPD_FIFO | /tmp/mpd.fifo | Sortie fifo de mpd, lue pour les VU-mètres ; vide, ils sont coupés |
 | SPOTIFY | 1 (activé) | Spotify Connect : ce que joue librespot (raspotify), d'après ses événements ; `0` désactive |
 | DEMO | vide | `1` pour le mode démo : morceaux inventés, sans mpd |
 
@@ -159,6 +162,21 @@ sudo systemctl restart raspotify
 ```
 
 Si le pont utilise un autre port, ou HTTPS, ajoutez son adresse après le programme : `LIBRESPOT_ONEVENT="/usr/local/bin/nowplaying-spotify-event https://127.0.0.1:8766"`. Le pont n'accepte ces événements que depuis sa propre machine ; `--check` indique si raspotify lance le programme, et `SPOTIFY=0` coupe Spotify. Les détails du morceau demandent librespot 0.5 ou plus récent ; un librespot lancé autrement prend le même programme avec `--onevent`.
+
+## VU-mètres
+
+Avec `?vu=1`, deux VU-mètres bougent avec la musique, comme sur un ampli hi-fi : les aiguilles suivent le niveau moyen de chaque canal, et un voyant s'allume quand le son approche du maximum. Il leur faut une copie de ce que joue mpd : ajoutez cette sortie à `/etc/mpd.conf`, puis redémarrez mpd avec `sudo systemctl restart mpd` :
+
+```
+audio_output {
+	type	"fifo"
+	name	"nowplaying"
+	path	"/tmp/mpd.fifo"
+	format	"44100:16:2"
+}
+```
+
+mpd continue de jouer sur vos autres sorties comme avant ; celle-ci donne seulement le son au pont, qui le lit pendant qu'une page affiche les VU-mètres (quand personne ne la lit, elle ne coûte rien). `--check` indique s'il trouve le tube, et `MPD_FIFO` change son chemin. AirPlay et Spotify ne passent pas par mpd : les VU-mètres se cachent pendant qu'ils jouent. Avec Docker, décommentez la ligne du tube dans `docker-compose.yml`. Le mode démo a des niveaux inventés : essayez http://localhost:8766/?vu=1.
 
 ## HTTPS : écran allumé et installation de l'appli
 

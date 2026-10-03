@@ -24,6 +24,7 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 
 from fake_mpd import GRAY_PNG, FakeMPD  # noqa: E402
+import fake_fifo  # noqa: E402
 import fake_shairport  # noqa: E402
 
 
@@ -231,7 +232,7 @@ class Bridge:
         self.port = free_port()
         settings = dict(MPD_HOST='127.0.0.1', MPD_PORT=str(mpd_port), PORT=str(self.port), MPD_PASSWORD='',
                         LASTFM_API_KEY='', ITUNES_ARTWORK='0', TLS_CERT='', TLS_KEY='', ALSA_CARD='99',
-                        SHAIRPORT_PIPE='')
+                        SHAIRPORT_PIPE='', MPD_FIFO='')
         settings.update(env)
         self.https = bool(settings['TLS_CERT'])
         self.log = tempfile.TemporaryFile('w+')
@@ -369,7 +370,7 @@ class OnlineArtStatusTest(BridgeTestCase):
 def run_check(mpd_port, **env):
     settings = dict(MPD_HOST='127.0.0.1', MPD_PORT=str(mpd_port), PORT=str(free_port()), MPD_PASSWORD='',
                     LASTFM_API_KEY='', ITUNES_ARTWORK='0', TLS_CERT='', TLS_KEY='', ALSA_CARD='99',
-                    SHAIRPORT_PIPE='')
+                    SHAIRPORT_PIPE='', MPD_FIFO='')
     settings.update(env)
     result = subprocess.run([sys.executable, os.path.join(ROOT, 'mpd-bridge.py'), '--check'],
                             env=dict(os.environ, **settings), capture_output=True, text=True, timeout=30)
@@ -422,12 +423,23 @@ class PasswordTest(BridgeTestCase):
         self.assertEqual(code, 0, out)
 
 
-def read_event(response):
-    # The next server-sent event's payload
+def read_sse(response):
+    # (type, payload) of the next server-sent event
+    kind = 'message'
     while True:
         line = response.readline().decode()
-        if line.startswith('data: '):
-            return json.loads(line[6:])
+        if line.startswith('event: '):
+            kind = line[7:].strip()
+        elif line.startswith('data: '):
+            return kind, json.loads(line[6:])
+
+
+def read_event(response):
+    # The next status update's payload
+    while True:
+        kind, data = read_sse(response)
+        if kind == 'message':
+            return data
 
 
 class EventsTest(BridgeTestCase):
@@ -574,6 +586,45 @@ class AirPlayBridgeTest(BridgeTestCase):
         self.assertIn('AirPlay: shairport-sync metadata pipe at', out)
         code, out = run_check(self.mpd.port, SHAIRPORT_PIPE=self.pipe + '-missing')
         self.assertIn('AirPlay: no shairport-sync metadata pipe at', out)
+
+
+@unittest.skipUnless(hasattr(os, 'mkfifo'), 'needs named pipes')
+class VuMetersTest(BridgeTestCase):
+    def setUp(self):
+        super().setUp()  # mpd plays a FLAC ("Song")
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        self.fifo = os.path.join(tmp, 'mpd.fifo')
+        os.mkfifo(self.fifo)
+
+    def test_levels_with_the_updates(self):
+        b = self.start_bridge(MPD_FIFO=self.fifo)
+        self.assertTrue(b.now()[1]['levels'])  # the page can show meters
+        conn = http.client.HTTPConnection('127.0.0.1', b.port, timeout=5)
+        self.addCleanup(conn.close)
+        conn.request('GET', '/events?vu=1')
+        response = conn.getresponse()
+        self.assertEqual(read_event(response)['title'], 'Song')
+        mpd = threading.Thread(target=fake_fifo.play, args=(self.fifo, 1.5, 1.0, 0.5))
+        mpd.start()
+        self.addCleanup(mpd.join)
+        found = []
+        while len(found) < 10:
+            kind, data = read_sse(response)
+            if kind == 'levels' and data[0] > -60:
+                found.append(data)
+        left, right, left_peak, right_peak = found[-1]
+        self.assertAlmostEqual(left, -3.0, delta=0.2)
+        self.assertAlmostEqual(right, -9.0, delta=0.2)
+        self.assertAlmostEqual(right_peak, -6.0, delta=0.2)
+
+    def test_no_fifo_no_meters(self):
+        b = self.start_bridge(MPD_FIFO=self.fifo + '-missing')
+        self.assertFalse(b.now()[1]['levels'])
+        code, out = run_check(self.mpd.port, MPD_FIFO=self.fifo + '-missing')
+        self.assertIn('VU meters (?vu=1): no mpd fifo output at', out)
+        code, out = run_check(self.mpd.port, MPD_FIFO=self.fifo)
+        self.assertIn("VU meters (?vu=1): mpd's fifo output at", out)
 
 
 def spotify_event(port, **event):

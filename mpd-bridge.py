@@ -46,18 +46,22 @@ DEMO = os.environ.get('DEMO', '').strip().lower() in ('1', 'true', 'yes', 'on')
 SHAIRPORT_PIPE = os.environ.get('SHAIRPORT_PIPE', '/tmp/shairport-sync-metadata').strip()
 # Spotify Connect: librespot's events, posted by spotify-event.py; 0 turns it off
 SPOTIFY_ENABLED = os.environ.get('SPOTIFY', '1').strip().lower() not in ('0', 'false', 'no', 'off')
+# VU meters: mpd's fifo output (levels.py); empty turns them off
+MPD_FIFO = os.environ.get('MPD_FIFO', '/tmp/mpd.fifo').strip()
 
 # systemd's journal already timestamps each line
 logging.basicConfig(level=logging.INFO, format=('%(levelname)s %(message)s' if os.environ.get('JOURNAL_STREAM')
                                                 else '%(asctime)s %(levelname)s %(message)s'))
 log = logging.getLogger('nowplaying')
 
-sys.path.insert(0, SCRIPT_DIR)  # demo.py, shairport.py and spotify.py
-import shairport, spotify
+sys.path.insert(0, SCRIPT_DIR)  # demo.py, levels.py, shairport.py and spotify.py
+import levels, shairport, spotify
 if DEMO:
     import demo
 AIRPLAY = shairport.AirPlay() if SHAIRPORT_PIPE and not DEMO else None
 SPOTIFY = spotify.Spotify() if SPOTIFY_ENABLED and not DEMO else None
+LEVELS = (levels.LevelMeter(levels.demo_levels) if DEMO
+          else levels.LevelMeter(levels.fifo_levels(MPD_FIFO, log)) if MPD_FIFO else None)
 OTHER_PLAYERS = [player for player in (AIRPLAY, SPOTIFY) if player]  # besides mpd
 
 _mpd_sock = None
@@ -385,9 +389,15 @@ def display_title(song):
         return urllib.parse.urlparse(uri).netloc or uri
     return os.path.splitext(uri.rsplit('/', 1)[-1])[0]
 
+def is_fifo(path):
+    try:
+        return stat.S_ISFIFO(os.stat(path).st_mode)
+    except OSError:
+        return False
+
 def get_status():
     if DEMO:
-        return demo.status()
+        return dict(demo.status(), levels=True)
     status = parse_mpd(mpd_command('status'))
     currentsong = parse_mpd(mpd_command('currentsong'))
     state = status.get('state', 'stop')
@@ -455,7 +465,8 @@ def get_status():
         'stream': stream,
         'source': 'mpd',
         'next_title': next_title,
-        'next_artist': next_artist
+        'next_artist': next_artist,
+        'levels': bool(MPD_FIFO) and is_fifo(MPD_FIFO),  # VU meters possible
     }
 
 _mpd_problem = None  # last mpd error logged, so each change is logged once
@@ -506,7 +517,7 @@ class Broadcaster:
         self.clients = set()
 
     def subscribe(self):
-        q = queue.Queue(maxsize=20)
+        q = queue.Queue(maxsize=40)  # status updates, and ('levels', [...]) for the VU meters
         with self.lock:
             self.clients.add(q)
         return q
@@ -606,8 +617,9 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
 
-    def stream_events(self):
-        # Server-sent events: the current status, then every change
+    def stream_events(self, with_levels):
+        # Server-sent events: the current status, then every change; with
+        # ?vu=1, the levels for the VU meters too ("levels" events)
         self.send_response(200)
         self.send_header('Content-Type', 'text/event-stream')
         self.send_header('Cache-Control', 'no-cache')
@@ -615,19 +627,28 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
         q = events.subscribe()
+        if with_levels and LEVELS:
+            LEVELS.listen(q)
         try:
             self.wfile.write(b'retry: 2000\n\n')  # reconnect delay after a bridge restart
             self.send_event(status_or_error()[0])
             while True:
                 try:
-                    self.send_event(q.get(timeout=20))
+                    item = q.get(timeout=20)
                 except queue.Empty:
                     # Keeps proxies from closing a quiet stream, and finds out
                     # about pages that went away
                     self.wfile.write(b': ping\n\n')
+                    continue
+                if isinstance(item, tuple):  # ('levels', [left, right, left peak, right peak])
+                    self.wfile.write(f'event: levels\ndata: {json.dumps(item[1])}\n\n'.encode())
+                else:
+                    self.send_event(item)
         except OSError:
             pass  # the page went away
         finally:
+            if LEVELS:
+                LEVELS.unlisten(q)
             events.unsubscribe(q)
 
     def send_event(self, payload):
@@ -636,7 +657,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         url = urllib.parse.urlparse(self.path)
         if url.path == '/events':
-            self.stream_events()
+            self.stream_events(urllib.parse.parse_qs(url.query).get('vu') == ['1'])
         elif url.path == '/now':
             try:
                 self.send_json(*status_or_error())
@@ -826,6 +847,21 @@ def check():
         report('ok', f'AirPlay: shairport-sync metadata pipe at {SHAIRPORT_PIPE}')
 
     _check_spotify(report)
+
+    # VU meters
+    if DEMO:
+        report('--', 'VU meters (?vu=1): made-up levels (demo mode)')
+    elif not MPD_FIFO:
+        report('--', 'VU meters: off (MPD_FIFO is empty)')
+    elif not os.path.exists(MPD_FIFO):
+        report('--', f'VU meters (?vu=1): no mpd fifo output at {MPD_FIFO}',
+               'To use them, add a "fifo" audio_output to mpd.conf (see the README)')
+    elif not is_fifo(MPD_FIFO):
+        report('FAIL', f'VU meters: {MPD_FIFO} is not a named pipe', 'Check the path of the fifo output in mpd.conf')
+    elif not os.access(MPD_FIFO, os.R_OK):
+        report('FAIL', f'VU meters: no permission to read {MPD_FIFO}', 'The bridge must be able to read the pipe')
+    else:
+        report('ok', f'VU meters (?vu=1): mpd\'s fifo output at {MPD_FIFO}')
 
     # Port
     try:

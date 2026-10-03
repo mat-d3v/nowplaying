@@ -29,6 +29,7 @@ No nginx and no Python packages required - the bridge only uses the standard lib
 - Album art straight from mpd (embedded tags or cover file in the folder). When mpd has none, and for radios, from the iTunes Search API (free, no key), or Last.fm with an API key. The title shows at once, the artwork follows
 - Codec badge (FLAC, ALAC, MP3, AAC...) with bit depth and sample rate, also for tracks played from a UPnP/DLNA server (upmpdcli, BubbleUPnP, MinimServer...)
 - Hi-Res Audio logo for lossless files >= 88.2 kHz or >= 24 bit, and for DSD
+- VU meters, as an option: two needles that move with what mpd plays, with a peak lamp
 - Radios: "Live" badge, "Artist - Title" split in two lines, station name below
 - Untagged files show their file name
 - AirPlay: what's played from an iPhone, iPad or Mac through shairport-sync shows up too
@@ -92,6 +93,7 @@ Add them to the URL, combined with `&` - for example http://localhost:8766/?bg=b
 | `next=0` | Hide the "Up next" line |
 | `bg=blur` | Blurred artwork as the background, instead of the color gradient |
 | `scale=1.5` | Size set by hand (from `0.5` to `3`), e.g. bigger for a screen seen from afar. By default, the page fits itself to the screen |
+| `vu=1` | Two VU meters under the badges, moving with what mpd plays (needs a "fifo" output in `mpd.conf`, see [VU meters](#vu-meters)) |
 | `shift=0` | No burn-in protection. By default, what's on screen drifts by a few pixels every 3 minutes, too slowly to notice, so OLED screens don't keep a ghost of it |
 
 ## Configuration
@@ -109,6 +111,7 @@ Settings come from environment variables or from a `.env` file next to `mpd-brid
 | TLS_CERT, TLS_KEY | empty | Certificate and private key (PEM) to serve HTTPS, see [below](#https-keeping-the-screen-on-and-installing-the-app) |
 | ALSA_CARD | 0 | ALSA card read for the audio format when mpd doesn't report it |
 | SHAIRPORT_PIPE | /tmp/shairport-sync-metadata | shairport-sync's metadata pipe, for AirPlay; empty turns AirPlay off |
+| MPD_FIFO | /tmp/mpd.fifo | mpd's fifo output, read for the VU meters; empty turns them off |
 | SPOTIFY | 1 (on) | Spotify Connect: what librespot (raspotify) plays, from its events; `0` turns it off |
 | DEMO | empty | `1` for the demo mode: made-up tracks, no mpd needed |
 
@@ -159,6 +162,21 @@ sudo systemctl restart raspotify
 ```
 
 When the bridge uses another port, or HTTPS, add its address after the program: `LIBRESPOT_ONEVENT="/usr/local/bin/nowplaying-spotify-event https://127.0.0.1:8766"`. The bridge only takes these events from its own machine; `--check` says whether raspotify runs the program, and `SPOTIFY=0` turns Spotify off. Track details need librespot 0.5 or later; librespot started another way takes the same program as `--onevent`.
+
+## VU meters
+
+With `?vu=1`, two VU meters move with the music, like on a hi-fi amplifier: the needles follow the average level of each channel, and a lamp lights up when the sound gets close to full scale. They need a copy of what mpd plays: add this output to `/etc/mpd.conf`, then restart mpd with `sudo systemctl restart mpd`:
+
+```
+audio_output {
+	type	"fifo"
+	name	"nowplaying"
+	path	"/tmp/mpd.fifo"
+	format	"44100:16:2"
+}
+```
+
+mpd keeps playing on your other outputs as before; this one only hands the bridge the sound, which it reads while a page shows the meters (nobody reading it costs nothing). `--check` says whether it finds the pipe, and `MPD_FIFO` sets another path. AirPlay and Spotify don't go through mpd: the meters hide while they play. With Docker, uncomment the pipe's line in `docker-compose.yml`. The demo mode has made-up levels: try http://localhost:8766/?vu=1.
 
 ## HTTPS: keeping the screen on and installing the app
 

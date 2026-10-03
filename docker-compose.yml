@@ -11,6 +11,8 @@ services:
       - ./:/app:ro
       # AirPlay: shairport-sync's metadata pipe (see the README)
       # - /tmp/shairport-sync-metadata:/tmp/shairport-sync-metadata
+      # VU meters: mpd's fifo output (see the README)
+      # - /tmp/mpd.fifo:/tmp/mpd.fifo
     command: python mpd-bridge.py
     # Python as PID 1 ignores the stop signal: without an init process,
     # every stop or restart waited 10 s before Docker killed it

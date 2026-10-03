@@ -6,6 +6,7 @@
 
 - Artwork for tracks mpd has none for (no embedded picture, no cover file): looked up on the iTunes Search API, by album then by song, like radios. Only a result with the same names counts: no artwork rather than someone else's.
 - AirPlay: what shairport-sync plays shows up too (title, artist, album, artwork, progress, the device sending it), taking over from mpd while it plays.
+- VU meters (`?vu=1`): two needles that move with what mpd plays, with a peak lamp, from mpd's "fifo" output, read only while a page shows them. The demo mode has made-up levels.
 - Spotify Connect: what raspotify (librespot) plays shows up too, the same way, from librespot's events passed on by `spotify-event.py`. When AirPlay and Spotify both play, the last one started shows.
 
 ### Changed

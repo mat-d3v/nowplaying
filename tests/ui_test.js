@@ -12,6 +12,7 @@ const { chromium } = require('playwright');
 const ROOT = path.dirname(__dirname);
 const MPD_PORT = 16600, BRIDGE_PORT = 18766, BASE = `http://localhost:${BRIDGE_PORT}`;
 const PIPE = path.join(os.tmpdir(), `nowplaying-airplay-${process.pid}`);  // shairport-sync's metadata pipe
+const FIFO = path.join(os.tmpdir(), `nowplaying-mpd-${process.pid}.fifo`);  // mpd's fifo output, for the VU meters
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const failures = [];
 
@@ -61,10 +62,11 @@ async function waitFor(fn, expected, timeout = 5000) {
 
 (async () => {
   execFileSync('mkfifo', [PIPE]);
+  execFileSync('mkfifo', [FIFO]);
   const mpd = start('tests/fake_mpd.py', ['--port', String(MPD_PORT), '--scenario', 'flac_hires'], {});
   const bridge = start('mpd-bridge.py', [], {
     MPD_HOST: '127.0.0.1', MPD_PORT: String(MPD_PORT), PORT: String(BRIDGE_PORT), MPD_PASSWORD: '',
-    LASTFM_API_KEY: '', ITUNES_ARTWORK: '0', TLS_CERT: '', TLS_KEY: '', SHAIRPORT_PIPE: PIPE,
+    LASTFM_API_KEY: '', ITUNES_ARTWORK: '0', TLS_CERT: '', TLS_KEY: '', SHAIRPORT_PIPE: PIPE, MPD_FIFO: FIFO,
   });
   const browser = await chromium.launch();
   try {
@@ -190,9 +192,22 @@ async function waitFor(fn, expected, timeout = 5000) {
         [art, layout, true]);
     }
 
+    // VU meters (?vu=1): mpd's fifo output plays a sine, louder on the left
+    const meters = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+    await meters.goto(BASE + '/?vu=1');
+    const metersShown = () => meters.evaluate(() => getComputedStyle(document.getElementById('vu')).display !== 'none');
+    check('?vu=1: meters shown for mpd', await waitFor(metersShown, true), true);
+    const sine = spawn('python3', [path.join(ROOT, 'tests/fake_fifo.py'), '--pipe', FIFO, '--seconds', '3',
+      '--left', '0.5', '--right', '0.25'], { stdio: 'inherit' });
+    const needles = () => meters.evaluate(() => [vu.pos[0] > 0.6, vu.pos[1] > 0.2 && vu.pos[1] < 0.5]);
+    check('the needles follow the sound, left higher', await waitFor(needles, [true, true], 4000), [true, true]);
+    await new Promise(resolve => sine.on('exit', resolve));
+    check('...and fall back once it stops', await waitFor(() => meters.evaluate(() => vu.pos[0] < 0.1), true, 4000), true);
+
     // AirPlay (shairport-sync) takes over while it plays, then mpd comes back
     airplay('play');
     check('AirPlay shown over mpd', await waitFor(title, 'Harbor Lights', 3000), 'Harbor Lights');
+    check('no VU meters for AirPlay', await waitFor(metersShown, false), false);
     const airplayView = () => page.evaluate(() => [
       document.getElementById('badge-format').textContent,
       document.getElementById('status-text').textContent,
@@ -225,6 +240,7 @@ async function waitFor(fn, expected, timeout = 5000) {
     bridge.kill();
     mpd.kill();
     fs.unlinkSync(PIPE);
+    fs.unlinkSync(FIFO);
   }
   if (failures.length) {
     console.log(`\n${failures.length} failed`);
