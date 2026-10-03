@@ -81,6 +81,21 @@ class AudioFormatTest(unittest.TestCase):
             self.assertEqual(bridge.get_audio_format({'audio': 'garbage'}), '48000:32:2')
 
 
+class BadgesTest(unittest.TestCase):
+    def test_same_rules_as_the_page(self):
+        cases = [
+            (('96000:24:2', 'FLAC', True), ['FLAC', '24bit / 96.0 kHz', 'Hi-Res']),
+            (('44100:16:2', 'FLAC', True), ['FLAC', '16bit / 44.1 kHz']),
+            (('44100:24:2', 'MP3', False), ['MP3', '44.1 kHz']),   # no bit depth for lossy files
+            (('dsd64:2', 'DSF', True), ['DSF', 'DSD64', 'Hi-Res']),
+            (('44100:f:2', '', False), ['44.1 kHz']),              # a radio
+            (('', 'FLAC', True), ['FLAC']),
+        ]
+        for args, expected in cases:
+            with self.subTest(args=args):
+                self.assertEqual(bridge.describe_badges(*args), expected)
+
+
 class DotenvTest(unittest.TestCase):
     KEYS = ('NP_TEST_A', 'NP_TEST_B', 'NP_TEST_C', 'NP_TEST_SET')
 
@@ -217,6 +232,37 @@ class StatusTest(BridgeTestCase):
         self.assertEqual((status, data['error']), (503, 'mpd_unreachable'))
 
 
+def run_check(mpd_port, **env):
+    settings = dict(MPD_HOST='127.0.0.1', MPD_PORT=str(mpd_port), PORT=str(free_port()), MPD_PASSWORD='',
+                    LASTFM_API_KEY='', ITUNES_ARTWORK='0', TLS_CERT='', TLS_KEY='', ALSA_CARD='99')
+    settings.update(env)
+    result = subprocess.run([sys.executable, os.path.join(ROOT, 'mpd-bridge.py'), '--check'],
+                            env=dict(os.environ, **settings), capture_output=True, text=True, timeout=30)
+    return result.returncode, result.stdout
+
+
+class CheckTest(BridgeTestCase):
+    def test_all_good(self):
+        code, out = run_check(self.mpd.port)
+        self.assertEqual(code, 0, out)
+        for line in ('mpd 0.23.5 at', "Instant updates: mpd's idle command works", 'Playing: Song',
+                     'badges: FLAC, 24bit / 96.0 kHz, Hi-Res', 'Artwork: embedded in the file', 'No problem found.'):
+            self.assertIn(line, out)
+
+    def test_mpd_down(self):
+        code, out = run_check(free_port())
+        self.assertEqual(code, 1, out)
+        self.assertIn('mpd: nothing answers at', out)
+
+    def test_port_taken(self):
+        with socket.socket() as busy:
+            busy.bind(('0.0.0.0', 0))
+            busy.listen()
+            code, out = run_check(self.mpd.port, PORT=str(busy.getsockname()[1]))
+        self.assertEqual(code, 1, out)
+        self.assertIn('is taken by another program', out)
+
+
 class PasswordTest(BridgeTestCase):
     password = 'secret'
 
@@ -230,6 +276,15 @@ class PasswordTest(BridgeTestCase):
                 else:
                     self.assertEqual((status, data['title']), (200, 'Song'))
                     self.assertEqual(b.get(data['art_url'])[0], 200)  # its own connection, same password
+
+    def test_check_explains(self):
+        code, out = run_check(self.mpd.port)
+        self.assertEqual(code, 1, out)
+        self.assertIn('mpd needs a password', out)
+        code, out = run_check(self.mpd.port, MPD_PASSWORD='wrong')
+        self.assertIn('mpd refused MPD_PASSWORD', out)
+        code, out = run_check(self.mpd.port, MPD_PASSWORD='secret')
+        self.assertEqual(code, 0, out)
 
 
 class EventsTest(BridgeTestCase):

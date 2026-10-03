@@ -56,6 +56,14 @@ Ouvrez ensuite http://localhost:8766 dans un navigateur, ou `http://<ip-de-la-ma
 
 La page suit la langue du navigateur (anglais ou français). Pour en forcer une : http://localhost:8766/?lang=fr ou `?lang=en` (http://localhost:8766/index.fr.html fonctionne toujours).
 
+## Vérifier l'installation
+
+```bash
+python3 mpd-bridge.py --check
+```
+
+Teste la connexion à mpd et son mot de passe, le format et la pochette du morceau en cours, les mises à jour instantanées, le HTTPS, le port et les pochettes en ligne, et indique comment corriger ce qui ne va pas. Avec Docker : `docker compose run --rm nowplaying python mpd-bridge.py --check`.
+
 ## Options d'affichage
 
 À ajouter à l'URL, combinées avec `&` - par exemple http://localhost:8766/?bg=blur&clock=12
@@ -89,7 +97,7 @@ Les réglages viennent des variables d'environnement ou d'un fichier `.env` plac
 ./install.sh
 ```
 
-Crée `.env` (demande un mot de passe mpd et une clé Last.fm, tous deux optionnels) et installe un service `mpd-bridge` qui tourne sous votre utilisateur et démarre au boot. Relancez-le après un `git pull` pour redémarrer le service sur la nouvelle version. Journaux : `journalctl -u mpd-bridge -f`.
+Crée `.env` (demande un mot de passe mpd et une clé Last.fm, tous deux optionnels), installe un service `mpd-bridge` qui tourne sous votre utilisateur et démarre au boot, puis vérifie l'installation. Relancez-le après un `git pull` pour redémarrer le service sur la nouvelle version. Journaux : `journalctl -u mpd-bridge -f`.
 
 ## Docker
 

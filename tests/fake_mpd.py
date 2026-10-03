@@ -100,6 +100,8 @@ SCENARIOS = {
 
 
 class _Handler(socketserver.StreamRequestHandler):
+    rbufsize = 0  # unbuffered: a "noidle" sent right after "idle" stays visible to select()
+
     def write(self, text):
         data = text if isinstance(text, bytes) else text.encode()
         self.wfile.write(data)

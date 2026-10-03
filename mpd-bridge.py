@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
-import socket, json, urllib.request, urllib.parse, re, os, threading, logging, queue, time, ssl
+import socket, json, urllib.request, urllib.parse, re, os, threading, logging, queue, time, ssl, sys
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -586,6 +586,221 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
     def log_message(self, *args): pass
 
+def describe_badges(fmt, codec, lossless):
+    # The badges the page shows for this format (same rules as index.html)
+    parts = fmt.split(':')
+    badges = [codec] if codec else []
+    dsd = re.fullmatch(r'dsd(\d+)', parts[0]) if fmt else None
+    if dsd:
+        return badges + [f'DSD{dsd.group(1)}', 'Hi-Res']
+    if fmt:
+        rate = int(parts[0]) if parts[0].isdigit() else 0
+        bits = int(parts[1]) if lossless and parts[1:2] and parts[1].isdigit() else 0
+        khz = f'{rate / 1000:.1f} kHz' if rate >= 1000 else ''
+        badges += [f'{bits}bit / {khz}' if bits and khz else khz] if khz else []
+        if lossless and (rate >= 88200 or bits >= 24):
+            badges.append('Hi-Res')
+    return badges
+
+def check():
+    # python3 mpd-bridge.py --check: tests the setup, says what's wrong and
+    # how to fix it. Exit status 1 when something needs fixing.
+    problems = 0
+
+    def report(status, text, hint=''):
+        nonlocal problems
+        problems += status == 'FAIL'
+        print(f'  {status:<4}  {text}')
+        if hint:
+            print(f'        {hint}')
+
+    def fetch_json(url):
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({})) if '127.0.0.1' in url \
+            else urllib.request.build_opener()
+        try:
+            with opener.open(url, timeout=8) as r:
+                return json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return json.loads(e.read() or b'{}')
+
+    print('nowplaying setup check\n')
+    report('ok' if sys.version_info >= (3, 7) else 'FAIL', f'Python {sys.version.split()[0]}',
+           '' if sys.version_info >= (3, 7) else 'Python 3.7 or later is needed')
+    env_file = os.path.join(SCRIPT_DIR, '.env')
+    report('ok' if os.path.exists(env_file) else '--',
+           f'Settings from {env_file}' if os.path.exists(env_file) else 'No .env file: defaults and environment variables only')
+
+    _check_mpd(report)
+
+    # ALSA: only a fallback for the audio format
+    if not os.path.isdir('/proc/asound'):
+        report('--', 'ALSA: not visible here (another OS, or a container): mpd\'s format is used')
+    elif not os.path.isdir(f'/proc/asound/card{ALSA_CARD}'):
+        try:
+            with open('/proc/asound/cards') as f:
+                cards = ', '.join(line.split(']:')[0].strip().replace(' [', ' ').strip()
+                                  for line in f if ']:' in line)
+        except OSError:
+            cards = ''
+        report('warn', f'ALSA card {ALSA_CARD} not found ({cards or "no card"})',
+               'Only used when mpd gives no format; set ALSA_CARD to the right number')
+    else:
+        try:
+            with open(f'/proc/asound/card{ALSA_CARD}/id') as f:
+                card_id = f.read().strip()
+        except OSError:
+            card_id = '?'
+        fmt = get_alsa_format()
+        report('--', f'ALSA card {ALSA_CARD} ({card_id}): ' + (f'playing {fmt}' if fmt else 'idle')
+               + ' - only used when mpd gives no format')
+
+    # HTTPS
+    if TLS_CERT or TLS_KEY:
+        try:
+            ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER).load_cert_chain(TLS_CERT, TLS_KEY or None)
+        except (OSError, ssl.SSLError) as e:
+            report('FAIL', f'HTTPS: cannot load TLS_CERT / TLS_KEY: {e}', 'Check both paths (relative to this folder)')
+        else:
+            try:
+                cert = ssl._ssl._test_decode_cert(TLS_CERT)  # names and expiry; CPython only
+            except Exception:
+                cert = None
+            if not cert:
+                report('ok', 'HTTPS: certificate and key load')
+            else:
+                names = ', '.join(v for _, v in cert.get('subjectAltName', ())) or '?'
+                days = (ssl.cert_time_to_seconds(cert['notAfter']) - time.time()) / 86400
+                text = f'HTTPS: certificate for {names}, ' + (f'valid {int(days)} more days' if days >= 1
+                                                                       else 'expires within a day')
+                if days < 0:
+                    report('FAIL', f'HTTPS: certificate for {names} expired', 'Make a new one (e.g. with mkcert)')
+                else:
+                    report('warn' if days < 30 else 'ok', text, 'Renew it soon' if days < 30 else '')
+    else:
+        report('--', 'HTTPS: off, so phones and tablets get no Wake Lock', 'See "HTTPS" in the README')
+
+    # Port
+    try:
+        with socket.socket() as probe:
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            probe.bind(('0.0.0.0', PORT))
+        report('ok', f'Port {PORT} is free')
+    except OSError:
+        if TLS_CERT or TLS_KEY:
+            report('--', f'Port {PORT} is in use, probably by the bridge itself')
+        else:
+            try:
+                answer = fetch_json(f'http://127.0.0.1:{PORT}/now')
+                ours = 'state' in answer or 'error' in answer
+            except Exception:
+                ours = False
+            if ours:
+                report('--', f'Port {PORT}: the bridge is already running there')
+            else:
+                report('FAIL', f'Port {PORT} is taken by another program', 'Choose another PORT in .env')
+
+    # Online artwork
+    if ITUNES_ENABLED:
+        try:
+            found = fetch_json('https://itunes.apple.com/search?term=Daft+Punk+One+More+Time'
+                               '&media=music&entity=song&limit=1').get('resultCount', 0)
+            report('ok' if found else 'warn', 'iTunes Search API: reachable (radio artwork)' if found
+                   else 'iTunes Search API: no answer to a test search')
+        except Exception as e:
+            report('warn', f'iTunes Search API unreachable: {e}', 'Radios will show no artwork (ITUNES_ARTWORK=0 silences this)')
+    else:
+        report('--', 'iTunes radio artwork: off (ITUNES_ARTWORK=0)')
+    if LASTFM_ENABLED:
+        try:
+            q = urllib.parse.urlencode({'method': 'album.getinfo', 'api_key': LASTFM_KEY, 'artist': 'Daft Punk',
+                                        'album': 'Discovery', 'format': 'json'})
+            answer = fetch_json(f'https://ws.audioscrobbler.com/2.0/?{q}')
+            if 'error' in answer:
+                report('FAIL', f'Last.fm refused the key: {answer.get("message", answer["error"])}',
+                       'Check LASTFM_API_KEY (https://www.last.fm/api/accounts)')
+            else:
+                report('ok', 'Last.fm: key accepted (artwork fallback)')
+        except Exception as e:
+            report('warn', f'Last.fm unreachable: {e}')
+    else:
+        report('--', 'Last.fm artwork fallback: off (no LASTFM_API_KEY)')
+
+    print('\n' + ('No problem found.' if not problems else f'{problems} problem(s) to fix.'))
+    return 1 if problems else 0
+
+def _check_mpd(report):
+    where = f'{MPD_HOST}:{MPD_PORT}'
+    try:
+        with socket.create_connection((MPD_HOST, MPD_PORT), timeout=3) as s:
+            banner = s.recv(1024).decode('utf-8', 'replace').strip()
+    except ConnectionRefusedError:
+        report('FAIL', f'mpd: nothing answers at {where}',
+               'Is mpd running? Check MPD_HOST / MPD_PORT, and port / bind_to_address in mpd.conf')
+        return
+    except OSError as e:
+        report('FAIL', f'mpd: cannot reach {where}: {e}', 'Check MPD_HOST / MPD_PORT, and any firewall')
+        return
+    if not banner.startswith('OK MPD'):
+        report('FAIL', f'Something else than mpd answers at {where}: {banner[:60]!r}', 'Check MPD_PORT')
+        return
+    report('ok', f'mpd {banner[7:]} at {where}')
+    try:
+        status = parse_mpd(mpd_command('status'))
+        song = parse_mpd(mpd_command('currentsong'))
+    except MPDError as e:
+        if e.code == ACK_PASSWORD:
+            report('FAIL', 'mpd refused MPD_PASSWORD', 'Compare it with the password line of mpd.conf')
+        elif e.code == ACK_PERMISSION:
+            report('FAIL', 'mpd needs a password', 'Set MPD_PASSWORD in .env')
+        else:
+            report('FAIL', f'mpd answered with an error: {e}')
+        return
+    except OSError as e:
+        report('FAIL', f'mpd stopped answering: {e}')
+        return
+    report('ok', 'mpd accepts the password' if MPD_PASSWORD else 'mpd answers without a password')
+
+    # Instant updates rely on mpd's "idle" command
+    try:
+        s = _mpd_connect()
+        try:
+            s.sendall(b'idle player\nnoidle\n')
+            idle_ok = not _mpd_recv(s).startswith('ACK ')
+        finally:
+            s.close()
+        report('ok' if idle_ok else 'warn', 'Instant updates: mpd\'s idle command works' if idle_ok
+               else 'mpd refused "idle": the page will poll every 2 s instead')
+    except (OSError, MPDError) as e:
+        report('warn', f'Instant updates: idle failed ({e})', 'The page will poll every 2 s instead')
+
+    file_url = song.get('file', '')
+    state = status.get('state', 'stop')
+    if state == 'stop' or not file_url:
+        report('--', 'Nothing playing: start a track, then check again to see its format and artwork')
+        return
+    report('ok', f'{"Playing" if state == "play" else "Paused"}: {display_title(song)} ({file_url})')
+    audio = status.get('audio', '')
+    fmt = get_audio_format(status)
+    codec, lossless = get_codec(file_url, audio)
+    source = 'from mpd' if fmt and fmt == audio else f'from ALSA card {ALSA_CARD}' if fmt else ''
+    badges = ', '.join(describe_badges(fmt, codec, lossless))
+    report('ok' if fmt else 'warn', f'Audio format {fmt} {source} -> badges: {badges or "none"}' if fmt
+           else 'No audio format from mpd nor ALSA: no quality badge')
+    if '://' in file_url:
+        report('--', 'A stream: artwork comes from iTunes (see below)')
+        return
+    for cmd, where_from in (('readpicture', 'embedded in the file'), ('albumart', 'cover file in its folder')):
+        try:
+            data, mime = _fetch_mpd_binary(cmd, file_url)
+        except (OSError, MPDError, ValueError):
+            data = None
+        if data:
+            size = f'{len(data) // 1024} KB' if len(data) >= 1024 else f'{len(data)} bytes'
+            report('ok', f'Artwork: {where_from} ({mime or _sniff_mime(data)}, {size})')
+            return
+    report('--', 'No artwork in mpd for this track (embedded picture or cover file)',
+           'Last.fm can fill in: set LASTFM_API_KEY' if not LASTFM_ENABLED else '')
+
 class Server(ThreadingHTTPServer):
     tls = None  # ssl.SSLContext when serving HTTPS
 
@@ -606,6 +821,8 @@ class Server(ThreadingHTTPServer):
             self.shutdown_request(request)
 
 def main():
+    if '--check' in sys.argv[1:]:
+        raise SystemExit(check())
     server = Server(('0.0.0.0', PORT), Handler)
     if TLS_CERT or TLS_KEY:
         server.tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)

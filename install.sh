@@ -77,3 +77,6 @@ fi
 echo ""
 echo "==> Done! Bridge running as $RUN_USER"
 echo "==> Open $SCHEME://${IP:-localhost}:${PORT:-8766} in a browser"
+echo ""
+echo "==> Checking the setup (run it again any time: python3 mpd-bridge.py --check)"
+"$PYTHON" "$SCRIPT_DIR/mpd-bridge.py" --check || true
