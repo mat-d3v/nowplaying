@@ -94,6 +94,13 @@ SCENARIOS = {
         'song': {'file': 'http://192.168.1.10:9790/minimserver/*/Music/Night%20Ferries/01%20Pier.flac',
                  'Title': 'Pier', 'Artist': 'June Avenue', 'Album': 'Night Ferries'},
     },
+    # A streaming service through a UPnP controller: an address that doesn't
+    # say what it carries, 24-bit samples at 96 kHz
+    'stream_hires': {
+        'status': _playing('96000:24:2', duration='254.0'),
+        'song': {'file': 'http://192.168.1.20:49149/qobuz/track/version/1/trackId/123456',
+                 'Title': 'Quay', 'Artist': 'June Avenue', 'Album': 'Night Ferries'},
+    },
     # Not something mpd sends: makes the bridge hit an unexpected error
     'bad_status': {
         'status': {'state': 'play', 'elapsed': 'oops', 'audio': '44100:16:2'},

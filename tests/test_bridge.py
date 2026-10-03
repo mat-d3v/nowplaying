@@ -57,6 +57,17 @@ class CodecTest(unittest.TestCase):
             ('http://radio.example/stream', '44100:f:2'): ('', False),
             ('http://radio.example/live.m3u8', '48000:f:2'): ('', False),
             ('http://radio.example:8000/live.v2', '48000:f:2'): ('', False),
+            # ...or in their parameters, Qobuz's own addresses with a number
+            ('http://192.168.1.20:49149/qobuz/track?trackId=12&ext=.flac', '96000:24:2'): ('FLAC', True),
+            ('http://192.168.1.20:8080/stream/12?format=flac', '44100:16:2'): ('FLAC', True),
+            ('https://streaming-qobuz-std.akamaized.net/file?uid=1&fmt=27', '192000:24:2'): ('FLAC', True),
+            ('https://streaming-qobuz-std.akamaized.net/file?uid=1&fmt=5', '44100:f:2'): ('MP3', False),
+            # An address that says nothing: integer samples at 88.2 kHz or
+            # more only come from lossless files; anything else, no claim
+            ('http://192.168.1.20:49149/qobuz/track/version/1/trackId/12', '96000:24:2'): ('', True),
+            ('http://radio.example/stream', '96000:f:2'): ('', False),
+            ('http://radio.example/stream', '44100:16:2'): ('', False),
+            ('http://radio.example/stream', 'dsd64:2'): ('', False),
             ('', ''): ('', False),
         }
         for (uri, audio), expected in cases.items():
@@ -99,6 +110,7 @@ class BadgesTest(unittest.TestCase):
             (('44100:24:2', 'MP3', False), ['MP3', '44.1 kHz']),   # no bit depth for lossy files
             (('dsd64:2', 'DSF', True), ['DSF', 'DSD64', 'Hi-Res']),
             (('44100:f:2', '', False), ['44.1 kHz']),              # a radio
+            (('96000:24:2', '', True), ['24bit / 96.0 kHz', 'Hi-Res']),  # a stream that doesn't say
             (('', 'FLAC', True), ['FLAC']),
         ]
         for args, expected in cases:

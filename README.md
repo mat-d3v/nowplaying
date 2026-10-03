@@ -27,7 +27,7 @@ No nginx and no Python packages required - the bridge only uses the standard lib
 
 - Background gradient extracted from the album art colors (or the blurred artwork, see [display options](#display-options))
 - Album art straight from mpd (embedded tags or cover file in the folder). When mpd has none, and for radios, from the iTunes Search API (free, no key), or Last.fm with an API key. The title shows at once, the artwork follows
-- Codec badge (FLAC, ALAC, MP3, AAC...) with bit depth and sample rate, also for tracks played from a UPnP/DLNA server (upmpdcli, BubbleUPnP, MinimServer...)
+- Codec badge (FLAC, ALAC, MP3, AAC...) with bit depth and sample rate, also for tracks played from a UPnP/DLNA server or a streaming service through it (upmpdcli, BubbleUPnP, MinimServer, Qobuz...)
 - Hi-Res Audio logo for lossless files >= 88.2 kHz or >= 24 bit, and for DSD
 - VU meters, as an option: two needles that move with what mpd plays, with a peak lamp
 - Radios: "Live" badge, "Artist - Title" split in two lines, station name below

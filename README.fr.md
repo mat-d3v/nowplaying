@@ -27,7 +27,7 @@ Ni nginx ni paquet Python à installer - le pont n'utilise que la bibliothèque 
 
 - Dégradé de fond extrait des couleurs de la pochette (ou la pochette floutée, voir les [options d'affichage](#options-daffichage))
 - Pochettes directement via mpd (tags embarqués ou cover du dossier). Quand mpd n'en a pas, et pour les radios, via l'API iTunes Search (gratuite, sans clé), ou Last.fm avec une clé API. Le titre s'affiche tout de suite, la pochette suit
-- Badge du codec (FLAC, ALAC, MP3, AAC...) avec profondeur de bits et fréquence d'échantillonnage, y compris pour les morceaux lus depuis un serveur UPnP/DLNA (upmpdcli, BubbleUPnP, MinimServer...)
+- Badge du codec (FLAC, ALAC, MP3, AAC...) avec profondeur de bits et fréquence d'échantillonnage, y compris pour les morceaux lus depuis un serveur UPnP/DLNA ou un service de streaming par ce biais (upmpdcli, BubbleUPnP, MinimServer, Qobuz...)
 - Logo Hi-Res Audio pour les fichiers sans perte >= 88,2 kHz ou >= 24 bits, et pour le DSD
 - VU-mètres en option : deux aiguilles qui bougent avec ce que joue mpd, avec un voyant de crête
 - Radios : badge « En direct », « Artiste - Titre » séparé sur deux lignes, nom de la station en dessous

@@ -125,6 +125,12 @@ async function waitFor(fn, expected, timeout = 5000) {
     check('UPnP track (http address): FLAC badges, Hi-Res, progress, no Live badge',
       [upnp.codec, upnp.quality, upnp.hires, upnp.live, upnp.progress], ['FLAC', '24bit / 192.0 kHz', true, false, true]);
 
+    await setScenario('stream_hires');
+    await waitFor(title, 'Quay');
+    const service = await view();
+    check('stream that says nothing, 24/96 samples: bit depth and Hi-Res, no codec badge',
+      [service.codec, service.quality, service.hires], [null, '24bit / 96.0 kHz', true]);
+
     await setScenario('untagged');
     await waitFor(title, 'track01');
     const untagged = await view();

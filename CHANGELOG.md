@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Qobuz and other streaming services through a UPnP controller: their FLAC badge and Hi-Res logo also show when the address gives the format in its parameters (`?format=flac`, `?file=01.flac`, Qobuz's own `fmt=27`). And an address that doesn't say at all, but plays integer samples at 88.2 kHz or more (only lossless files give those), gets its bit depth and the Hi-Res logo, without a codec badge.
+
 ## 1.1.0 - 2026-10-03
 
 ### Added

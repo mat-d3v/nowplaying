@@ -378,28 +378,55 @@ CODECS = {
     'opus': ('OPUS', False), 'wma': ('WMA', False), 'mpc': ('MPC', False),
 }
 
+# Qobuz's own stream addresses give their format as a number
+QOBUZ_FORMATS = {'5': 'mp3', '6': 'flac', '7': 'flac', '27': 'flac'}
+
+def _known(ext):
+    return ext in CODECS or ext in ('m4a', 'mp4')
+
+def _extension(file_url):
+    # The file's extension. An address (UPnP/DLNA servers and controllers:
+    # upmpdcli, BubbleUPnP, MinimServer... give mpd http addresses) usually
+    # ends like the file ("/01%20Song.flac?..."); else its parameters may
+    # say ("?file=01.flac", "?format=flac", Qobuz's "fmt=27")
+    def ext_of(text):
+        name = text.rsplit('/', 1)[-1]
+        return name.rsplit('.', 1)[1].lower() if '.' in name else ''
+    if '://' not in file_url:
+        return ext_of(file_url)
+    url = urllib.parse.urlparse(file_url)
+    params = urllib.parse.parse_qsl(url.query)
+    for text in [url.path] + [value for _, value in params]:
+        if _known(ext_of(text)):
+            return ext_of(text)
+    for name, value in params:
+        if name.lower() in ('format', 'fmt', 'ext', 'codec') and _known(value.lower().lstrip('.')):
+            return value.lower().lstrip('.')
+    if 'qobuz' in (url.hostname or ''):
+        return QOBUZ_FORMATS.get(dict(params).get('fmt', ''), '')
+    return ''
+
 def get_codec(file_url, audio):
-    # From the file's extension. Addresses too: UPnP/DLNA servers and
-    # controllers (upmpdcli, BubbleUPnP, MinimServer...) give mpd an http
-    # address that usually ends like the file ("/01%20Song.flac?..."). A
-    # radio or an address without a known audio extension gets no badge,
-    # rather than a wrong one
+    # (badge, lossless), from the file's extension
     if not file_url:
         return '', False
     url = '://' in file_url
-    name = (urllib.parse.urlparse(file_url).path if url else file_url).rsplit('/', 1)[-1]
-    if '.' not in name:
-        return '', False
-    ext = name.rsplit('.', 1)[1].lower()
+    ext = _extension(file_url)
     if ext in ('m4a', 'mp4'):
         # Same container for AAC and ALAC: mpd decodes AAC to float samples
         # ("44100:f:2") and ALAC to integer ones ("44100:16:2")
         if not audio:
             return 'M4A', False
         return ('AAC', False) if audio.split(':')[1:2] == ['f'] else ('ALAC', True)
-    if url and ext not in CODECS:
-        return '', False  # e.g. a playlist.m3u8
-    return CODECS.get(ext, (ext.upper(), False))
+    if ext in CODECS or (ext and not url):
+        return CODECS.get(ext, (ext.upper(), False))
+    # An address that doesn't say what it carries (a radio, a playlist.m3u8,
+    # a stream from a service): no codec badge rather than a wrong one. Its
+    # samples can still tell: integers at 88.2 kHz or more only come from
+    # lossless files (lossy decoders give floating point, or 48 kHz at most)
+    parts = audio.split(':')
+    lossless = url and len(parts) == 3 and parts[0].isdigit() and int(parts[0]) >= 88200 and parts[1].isdigit()
+    return '', lossless
 
 def display_title(song):
     # Untagged files and radios without a title still get a name instead of
