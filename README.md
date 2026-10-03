@@ -20,39 +20,53 @@ No nginx and no Python packages required - the bridge only uses the standard lib
 
 ## What it looks like
 
-- Background gradient extracted from the album art colors
-- Album art straight from mpd (embedded tags or cover file in the folder), Last.fm as an optional fallback when mpd has none (needs artist and album tags)
+- Background gradient extracted from the album art colors (or the blurred artwork, see [display options](#display-options))
+- Album art straight from mpd (embedded tags or cover file in the folder), from the iTunes Search API for radios, Last.fm as an optional fallback
 - Codec badge (FLAC, ALAC, MP3, AAC...) with bit depth and sample rate
-- Hi-Res Audio logo for lossless files >= 88.2 kHz or >= 24 bit, and for DSD
-- Untagged files and radios show the file or station name
-- Progress bar, elapsed and total time
+- Hi-Res badge for lossless files >= 88.2 kHz or >= 24 bit, and for DSD
+- Radios: "Live" badge, "Artist - Title" split in two lines, station name below
+- Untagged files show their file name
+- Instant updates: the bridge pushes every change as it happens (track, pause, seek, queue)
+- Progress bar, elapsed and total time, smoothly interpolated
 - Scrolling marquee for long titles
 - Dimmed overlay when paused
 - Clock in the top right corner
 - "Up next" line showing the next track in the queue
-- Smooth progress interpolation between polls (no 2s jumps)
-- Offline indicator when the bridge stops responding
+- Clear messages when mpd is unreachable or needs a password, and an offline indicator when the bridge stops responding
+- English and French, following the browser's language
 - Responsive portrait layout for phones (iOS and Android): artwork centered on top, clock hidden
-- Screen Wake Lock and full-screen support via add-to-home-screen, on both iOS and Android (Wake Lock needs HTTPS or localhost, see [below](#keeping-the-screen-on))
+- Full-screen app from the home screen (on Android, this needs HTTPS or localhost), with Screen Wake Lock to keep the screen on (HTTPS or localhost too, see [below](#https-keeping-the-screen-on-and-installing-the-app))
 
 ## Requirements
 
 - MPD
-- Python 3, nothing else to install
-- Optional: a Last.fm API key for artwork on streams and radios - free at https://www.last.fm/api
+- Python 3.7 or later, nothing else to install
+- Optional: a Last.fm API key - free at https://www.last.fm/api
 
 ## Getting started
 
 ```bash
 git clone https://github.com/mat-d3v/nowplaying.git
 cd nowplaying
-cp .env.example .env   # optional: settings, e.g. your Last.fm API key
+cp .env.example .env   # optional: settings, e.g. your mpd password
 python3 mpd-bridge.py
 ```
 
 Then open http://localhost:8766 in a browser, or `http://<machine-ip>:8766` from a phone or tablet.
 
-For the French version: http://localhost:8766/index.fr.html or http://localhost:8766/?lang=fr
+The page follows the browser's language (English or French). To force one: http://localhost:8766/?lang=fr or `?lang=en` (http://localhost:8766/index.fr.html still works too).
+
+## Display options
+
+Add them to the URL, combined with `&` - for example http://localhost:8766/?bg=blur&clock=12
+
+| Option | Effect |
+|--------|--------|
+| `lang=fr`, `lang=en` | Force the language |
+| `clock=0` | Hide the clock |
+| `clock=12` | 12-hour clock |
+| `next=0` | Hide the "Up next" line |
+| `bg=blur` | Blurred artwork as the background, instead of the color gradient |
 
 ## Configuration
 
@@ -60,10 +74,13 @@ Settings come from environment variables or from a `.env` file next to `mpd-brid
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| LASTFM_API_KEY | empty (off) | Artwork fallback when mpd has none (streams, radios) |
 | MPD_HOST | 127.0.0.1 | MPD host |
 | MPD_PORT | 6600 | MPD port |
-| PORT | 8766 | HTTP port of the bridge |
+| MPD_PASSWORD | empty | MPD password, if `mpd.conf` sets one |
+| PORT | 8766 | Port of the bridge |
+| ITUNES_ARTWORK | 1 (on) | Radio artwork from the iTunes Search API. Only the artist and title of radio tracks are sent; `0` turns it off |
+| LASTFM_API_KEY | empty (off) | Last.fm artwork fallback when mpd has none (needs artist and album tags) |
+| TLS_CERT, TLS_KEY | empty | Certificate and private key (PEM) to serve HTTPS, see [below](#https-keeping-the-screen-on-and-installing-the-app) |
 | ALSA_CARD | 0 | ALSA card read for the audio format when mpd doesn't report it |
 
 ## Run it as a service (systemd)
@@ -72,7 +89,7 @@ Settings come from environment variables or from a `.env` file next to `mpd-brid
 ./install.sh
 ```
 
-Creates `.env` (asks for an optional Last.fm API key) and installs an `mpd-bridge` service that runs as your user and starts at boot. Run it again after a `git pull` to restart the service on the new version.
+Creates `.env` (asks for an optional mpd password and Last.fm API key) and installs an `mpd-bridge` service that runs as your user and starts at boot. Run it again after a `git pull` to restart the service on the new version. Logs: `journalctl -u mpd-bridge -f`.
 
 ## Docker
 
@@ -80,11 +97,66 @@ Creates `.env` (asks for an optional Last.fm API key) and installs an `mpd-bridg
 docker compose up -d
 ```
 
-The container uses the host network: the bridge reaches mpd on `127.0.0.1` and listens on the host's port 8766. Settings come from `.env`, as with a local install. Host networking works out of the box on Linux; Docker Desktop (macOS, Windows) needs it enabled in its settings.
+The container uses the host network: the bridge reaches mpd on `127.0.0.1` and listens on the host's port 8766. Settings come from `.env`, as with a local install. Host networking works out of the box on Linux; Docker Desktop (macOS, Windows) needs it enabled in its settings. Logs: `docker compose logs -f`.
 
-## Keeping the screen on
+## HTTPS: keeping the screen on and installing the app
 
-Browsers only grant the Screen Wake Lock to secure pages: HTTPS, or `localhost`. A phone or tablet opening `http://192.168.x.x:8766` gets the page but not the Wake Lock: turn off auto-lock on the device, or put the bridge behind an HTTPS reverse proxy (`nginx.conf` is a starting point).
+Browsers only grant the Screen Wake Lock to secure pages: HTTPS, or `localhost` (and Android only installs a secure page as an app). A phone or tablet opening `http://192.168.x.x:8766` gets the page, but its screen may go to sleep. Two ways to get HTTPS:
+
+**mkcert** makes a certificate for your local network. On the machine running the bridge, from the `nowplaying` folder (use its own name and IP address):
+
+```bash
+mkcert -install
+mkcert -cert-file nowplaying.pem -key-file nowplaying-key.pem nowplaying.local 192.168.1.10
+```
+
+Then add to `.env` and restart the bridge, which now answers on https://192.168.1.10:8766 (`.pem` files are git-ignored):
+
+```
+TLS_CERT=nowplaying.pem
+TLS_KEY=nowplaying-key.pem
+```
+
+Each phone or tablet must trust mkcert's root certificate, `rootCA.pem` in the folder shown by `mkcert -CAROOT`. On iOS, send it to the device (AirDrop, email), install the profile in Settings, then turn it on in Settings > General > About > Certificate Trust Settings. On Android: Settings > Security > Encryption & credentials > Install a certificate > CA certificate (menu names vary by brand).
+
+**Tailscale**, if your devices are on your tailnet: `tailscale serve --bg 8766` publishes the bridge at `https://<machine>.<tailnet>.ts.net`, with a certificate every browser already trusts (HTTPS certificates must be enabled in the Tailscale admin console).
+
+Already running nginx with certificates? `nginx.conf` is a reverse proxy example.
+
+Once on HTTPS, Android offers to install the page ("Install app"); on iOS, Share > Add to Home Screen works either way. It then opens full screen, from its own icon.
+
+## Raspberry Pi kiosk
+
+On Raspberry Pi OS with desktop:
+
+1. Install the bridge as a service: `./install.sh`
+2. Turn off screen blanking: `sudo raspi-config` > Display Options > Screen Blanking > No
+3. Start Chromium full screen when the desktop starts:
+
+   ```bash
+   mkdir -p ~/.config/autostart
+   cat > ~/.config/autostart/nowplaying.desktop <<'DESKTOP'
+   [Desktop Entry]
+   Type=Application
+   Name=Now Playing
+   Exec=chromium --kiosk --noerrdialogs --disable-infobars --no-first-run --incognito http://localhost:8766
+   DESKTOP
+   ```
+
+   (on older releases, the command is `chromium-browser`)
+4. Rotate the screen if needed: Preferences > Screen Configuration
+
+The page comes from `localhost` there, so the Wake Lock works without HTTPS.
+
+## Tests
+
+```bash
+python3 -m unittest discover -s tests -v    # the bridge, against a fake mpd
+npm install --no-save playwright && npx playwright install chromium
+node tests/ui_test.js                       # the page, in Chromium
+```
+
+GitHub Actions runs both on every push, with `shellcheck` on `install.sh`.
 
 ## License
 

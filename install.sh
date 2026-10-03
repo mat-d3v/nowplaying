@@ -29,6 +29,14 @@ if [ ! -f "$ENV_FILE" ]; then
   if [ -n "$LASTFM_API_KEY" ]; then
     sed -i "s|^LASTFM_API_KEY=.*|LASTFM_API_KEY=$LASTFM_API_KEY|" "$ENV_FILE"
   fi
+  if [ -z "$MPD_PASSWORD" ]; then
+    read -r -s -p "mpd password (optional - press Enter if mpd has none): " MPD_PASSWORD || true
+    echo
+  fi
+  if [ -n "$MPD_PASSWORD" ]; then
+    # Appended rather than substituted: a password may contain any character
+    printf 'MPD_PASSWORD=%s\n' "$MPD_PASSWORD" >> "$ENV_FILE"
+  fi
   if [ "$(id -u)" -eq 0 ] && [ -n "$SUDO_USER" ]; then
     chown "$SUDO_USER" "$ENV_FILE"
   fi
@@ -62,6 +70,10 @@ sudo systemctl restart mpd-bridge
 
 PORT="$(grep -E '^PORT=' "$ENV_FILE" | cut -d= -f2)"
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+SCHEME=http
+if grep -qE '^TLS_CERT=.+' "$ENV_FILE"; then
+  SCHEME=https
+fi
 echo ""
 echo "==> Done! Bridge running as $RUN_USER"
-echo "==> Open http://${IP:-localhost}:${PORT:-8766} in a browser"
+echo "==> Open $SCHEME://${IP:-localhost}:${PORT:-8766} in a browser"
