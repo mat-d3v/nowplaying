@@ -42,6 +42,7 @@ No nginx and no Python packages required - the bridge only uses the standard lib
 - "Up next" line showing the next track in the queue
 - Clear messages when mpd is unreachable or needs a password, and an offline indicator when the bridge stops responding
 - English and French, following the browser's language
+- A settings page for your phone: language, clock, background, size, VU meters... with a preview; saved, every screen shows them at once
 - Fits any screen, from 800×480 to 4K: small screens shrink the layout so the text keeps its room, big ones grow it
 - Upright screens (a TV on its side, the Raspberry Pi Touch Display 2, phones): artwork on top, text below
 - Full-screen app from the home screen (on Android, this needs HTTPS or localhost), with Screen Wake Lock to keep the screen on (HTTPS or localhost too, see [below](#https-keeping-the-screen-on-and-installing-the-app))
@@ -83,7 +84,9 @@ Tests the connection to mpd and its password, the current track's format and art
 
 ## Display options
 
-Add them to the URL, combined with `&` - for example http://localhost:8766/?bg=blur&clock=12
+From a phone or a computer, the settings page sets them for every screen, with a preview: http://localhost:8766/settings (or `http://<machine-ip>:8766/settings`). Saved, they show on the screens at once.
+
+A screen can also have its own, in its address, combined with `&` - for example http://localhost:8766/?bg=blur&clock=12. They win over the saved settings.
 
 | Option | Effect |
 |--------|--------|
@@ -113,6 +116,8 @@ Settings come from environment variables or from a `.env` file next to `mpd-brid
 | SHAIRPORT_PIPE | /tmp/shairport-sync-metadata | shairport-sync's metadata pipe, for AirPlay; empty turns AirPlay off |
 | MPD_FIFO | /tmp/mpd.fifo | mpd's fifo output, read for the VU meters; empty turns them off |
 | SPOTIFY | 1 (on) | Spotify Connect: what librespot (raspotify) plays, from its events; `0` turns it off |
+| DATA_DIR | this folder | Where the bridge saves the display settings (`settings.json`) |
+| SETTINGS_PAGE | 1 (on) | The settings page; `0` turns it off (saved settings still apply) |
 | DEMO | empty | `1` for the demo mode: made-up tracks, no mpd needed |
 
 ## Run it as a service (systemd)
@@ -129,7 +134,7 @@ Creates `.env` (asks for an optional mpd password and Last.fm API key), installs
 docker compose up -d
 ```
 
-The container uses the host network: the bridge reaches mpd on `127.0.0.1` and listens on the host's port 8766. Settings come from `.env`, as with a local install. Host networking works out of the box on Linux; Docker Desktop (macOS, Windows) needs it enabled in its settings. Logs: `docker compose logs -f`.
+The container uses the host network: the bridge reaches mpd on `127.0.0.1` and listens on the host's port 8766. Settings come from `.env`, as with a local install; the display settings saved from the settings page go to a volume of their own. Host networking works out of the box on Linux; Docker Desktop (macOS, Windows) needs it enabled in its settings. Logs: `docker compose logs -f`.
 
 ## AirPlay (shairport-sync)
 

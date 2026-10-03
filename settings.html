@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="google" content="notranslate">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0a0a">
+  <link rel="icon" href="/icon-192.png">
+  <title>Now Playing - Settings</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+      background: #0a0a0a;
+      color: rgba(255,255,255,0.9);
+      padding: max(20px, env(safe-area-inset-top)) 16px 40px;
+    }
+
+    main { max-width: 640px; margin: 0 auto; }
+
+    h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 4px; }
+    .lead { color: rgba(255,255,255,0.55); font-size: 15px; margin-bottom: 20px; }
+
+    #preview-box {
+      position: relative; width: 100%; overflow: hidden;
+      border-radius: 14px; border: 1px solid rgba(255,255,255,0.12);
+      background: #000; margin-bottom: 10px;
+    }
+    #preview { position: absolute; top: 0; left: 0; border: 0; transform-origin: 0 0; pointer-events: none; }
+    .preview-shape { display: flex; justify-content: center; margin-bottom: 24px; }
+
+    section {
+      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 14px; padding: 4px 16px; margin-bottom: 16px;
+    }
+
+    .row {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 14px 0; border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    .row:last-child { border-bottom: 0; }
+    .row.stacked { flex-direction: column; align-items: stretch; }
+    .label { font-size: 16px; }
+    .hint { display: block; font-size: 13px; color: rgba(255,255,255,0.45); margin-top: 3px; }
+
+    .choices { display: flex; background: rgba(255,255,255,0.07); border-radius: 10px; padding: 3px; flex-shrink: 0; }
+    .choices button {
+      font: inherit; font-size: 14px; color: rgba(255,255,255,0.75); background: none; border: 0;
+      padding: 7px 12px; border-radius: 8px; cursor: pointer; white-space: nowrap;
+    }
+    .choices button[aria-pressed="true"] { background: rgba(255,255,255,0.9); color: #0a0a0a; font-weight: 600; }
+
+    .switch { position: relative; width: 51px; height: 31px; flex-shrink: 0; }
+    .switch input { opacity: 0; width: 100%; height: 100%; margin: 0; position: absolute; cursor: pointer; z-index: 1; }
+    .switch span {
+      position: absolute; inset: 0; border-radius: 16px; background: rgba(255,255,255,0.18);
+      transition: background 0.2s ease;
+    }
+    .switch span::after {
+      content: ''; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px;
+      border-radius: 50%; background: #fff; transition: transform 0.2s ease;
+    }
+    .switch input:checked + span { background: #4ade80; }
+    .switch input:checked + span::after { transform: translateX(20px); }
+    .switch input:focus-visible + span { outline: 2px solid #fff; outline-offset: 2px; }
+
+    .size { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+    .size input[type="range"] { flex: 1; accent-color: #fff; }
+    .size output { width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; color: rgba(255,255,255,0.75); }
+    .size.off { opacity: 0.35; pointer-events: none; }
+
+    .actions { display: flex; gap: 12px; margin: 24px 0 12px; }
+    .actions button {
+      font: inherit; font-size: 16px; font-weight: 600; border: 0; border-radius: 12px;
+      padding: 14px 18px; cursor: pointer;
+    }
+    #save { flex: 1; background: #fff; color: #0a0a0a; }
+    #reset { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.85); }
+    #message { min-height: 22px; font-size: 15px; text-align: center; color: rgba(255,255,255,0.7); }
+    #message.ok { color: #4ade80; }
+    #message.error { color: #fca5a5; }
+
+    .address { margin-top: 28px; font-size: 13px; color: rgba(255,255,255,0.45); line-height: 1.5; }
+    .address code {
+      display: block; margin-top: 6px; padding: 10px 12px; border-radius: 10px;
+      background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.8); word-break: break-all;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1 data-i18n="title">Display settings</h1>
+  <p class="lead" data-i18n="lead">For every screen showing this page. Saved, they show at once.</p>
+
+  <div id="preview-box"><iframe id="preview" title="Preview" tabindex="-1"></iframe></div>
+  <div class="preview-shape">
+    <div class="choices" id="shape">
+      <button type="button" data-value="landscape" aria-pressed="true" data-i18n="landscape">Landscape</button>
+      <button type="button" data-value="upright" aria-pressed="false" data-i18n="upright">Upright</button>
+    </div>
+  </div>
+
+  <section>
+    <div class="row">
+      <span class="label" data-i18n="language">Language</span>
+      <div class="choices" data-setting="lang">
+        <button type="button" data-value="" data-i18n="auto">Auto</button>
+        <button type="button" data-value="en">English</button>
+        <button type="button" data-value="fr">Français</button>
+      </div>
+    </div>
+    <div class="row">
+      <span class="label" data-i18n="clock">Clock</span>
+      <div class="choices" data-setting="clock">
+        <button type="button" data-value="24">24 h</button>
+        <button type="button" data-value="12">12 h</button>
+        <button type="button" data-value="0" data-i18n="hidden">Hidden</button>
+      </div>
+    </div>
+    <div class="row">
+      <span class="label" data-i18n="background">Background</span>
+      <div class="choices" data-setting="bg">
+        <button type="button" data-value="glow" data-i18n="colors">Colors</button>
+        <button type="button" data-value="blur" data-i18n="blurred">Blurred artwork</button>
+      </div>
+    </div>
+    <div class="row">
+      <label class="label" for="next" data-i18n="upNext">"Up next" line</label>
+      <div class="switch"><input type="checkbox" id="next" data-setting="next"><span></span></div>
+    </div>
+    <div class="row">
+      <label class="label" for="vu"><span data-i18n="vu">VU meters</span><span class="hint" data-i18n="vuHint">Need mpd's "fifo" output (see the README)</span></label>
+      <div class="switch"><input type="checkbox" id="vu" data-setting="vu"><span></span></div>
+    </div>
+    <div class="row">
+      <label class="label" for="shift"><span data-i18n="shift">Burn-in protection</span><span class="hint" data-i18n="shiftHint">Moves everything a few pixels every 3 minutes (OLED screens)</span></label>
+      <div class="switch"><input type="checkbox" id="shift" data-setting="shift"><span></span></div>
+    </div>
+    <div class="row stacked">
+      <div class="row" style="padding: 0; border: 0">
+        <label class="label" for="auto-size"><span data-i18n="size">Fit the screen</span><span class="hint" data-i18n="sizeHint">Otherwise, the size set below</span></label>
+        <div class="switch"><input type="checkbox" id="auto-size"><span></span></div>
+      </div>
+      <div class="size" id="size-row">
+        <input type="range" id="scale" min="0.5" max="3" step="0.1" value="1" aria-label="Size">
+        <output id="scale-value" for="scale">1.0×</output>
+      </div>
+    </div>
+  </section>
+
+  <div class="actions">
+    <button type="button" id="reset" data-i18n="reset">Defaults</button>
+    <button type="button" id="save" data-i18n="save">Save</button>
+  </div>
+  <p id="message" role="status"></p>
+
+  <p class="address"><span data-i18n="address">Or, for one screen only, these options in its address:</span>
+    <code id="address"></code></p>
+</main>
+
+<script>
+  const STRINGS = {
+    en: {
+      title: 'Display settings', lead: 'For every screen showing this page. Saved, they show at once.',
+      landscape: 'Landscape', upright: 'Upright', language: 'Language', auto: 'Auto', clock: 'Clock',
+      hidden: 'Hidden', background: 'Background', colors: 'Colors', blurred: 'Blurred artwork',
+      upNext: '"Up next" line', vu: 'VU meters', vuHint: 'Need mpd\'s "fifo" output (see the README)',
+      shift: 'Burn-in protection', shiftHint: 'Moves everything a few pixels every 3 minutes (OLED screens)',
+      size: 'Fit the screen', sizeHint: 'Otherwise, the size set below', reset: 'Defaults', save: 'Save',
+      saved: 'Saved: the screens show it now', failed: 'Not saved: ',
+      address: 'Or, for one screen only, these options in its address:',
+    },
+    fr: {
+      title: 'Réglages de l\'affichage', lead: 'Pour tous les écrans qui affichent la page. Enregistrés, ils s\'appliquent aussitôt.',
+      landscape: 'Paysage', upright: 'Vertical', language: 'Langue', auto: 'Auto', clock: 'Horloge',
+      hidden: 'Masquée', background: 'Fond', colors: 'Couleurs', blurred: 'Pochette floutée',
+      upNext: 'Ligne « À suivre »', vu: 'VU-mètres', vuHint: 'Il faut la sortie « fifo » de mpd (voir le README)',
+      shift: 'Protection contre le marquage', shiftHint: 'Décale tout de quelques pixels toutes les 3 minutes (écrans OLED)',
+      size: 'S\'adapter à l\'écran', sizeHint: 'Sinon, la taille réglée ci-dessous', reset: 'Par défaut', save: 'Enregistrer',
+      saved: 'Enregistré : les écrans l\'affichent maintenant', failed: 'Non enregistré : ',
+      address: 'Ou, pour un seul écran, ces options dans son adresse :',
+    },
+  };
+  const LANG = (navigator.language || '').toLowerCase().indexOf('fr') === 0 ? 'fr' : 'en';
+  const T = STRINGS[LANG];
+  document.documentElement.lang = LANG;
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = T[el.dataset.i18n]; });
+
+  // The defaults, as the page sees them with no option
+  const DEFAULTS = { lang: '', clock: '24', bg: 'glow', next: '1', vu: '0', shift: '1', scale: '' };
+  let settings = { ...DEFAULTS };
+  let shape = 'landscape';
+
+  function show() {
+    document.querySelectorAll('.choices[data-setting]').forEach(group => {
+      group.querySelectorAll('button').forEach(b => {
+        b.setAttribute('aria-pressed', String(b.dataset.value === settings[group.dataset.setting]));
+      });
+    });
+    document.querySelectorAll('input[type="checkbox"][data-setting]').forEach(input => {
+      input.checked = settings[input.dataset.setting] === '1';
+    });
+    const fit = settings.scale === '';
+    document.getElementById('auto-size').checked = fit;
+    document.getElementById('size-row').classList.toggle('off', fit);
+    const scale = fit ? 1 : parseFloat(settings.scale);
+    document.getElementById('scale').value = scale;
+    document.getElementById('scale-value').textContent = scale.toFixed(1) + '×';
+    const query = address();
+    document.getElementById('address').textContent = location.origin + '/' + query;
+    showPreview(query);
+  }
+
+  // The options that differ from the defaults, as the page's address takes them
+  function address() {
+    const q = new URLSearchParams();
+    if (settings.lang) q.set('lang', settings.lang);
+    if (settings.clock !== '24') q.set('clock', settings.clock);
+    if (settings.next === '0') q.set('next', '0');
+    if (settings.bg === 'blur') q.set('bg', 'blur');
+    if (settings.scale) q.set('scale', settings.scale);
+    if (settings.shift === '0') q.set('shift', '0');
+    if (settings.vu === '1') q.set('vu', '1');
+    const text = q.toString();
+    return text ? '?' + text : '';
+  }
+
+  // The page itself, as a screen would show it, shrunk to fit here. Every
+  // option is in its address, so what's saved doesn't count
+  let previewQuery = null;
+  function showPreview(query) {
+    const [w, h] = shape === 'landscape' ? [1920, 1080] : [1080, 1920];
+    const box = document.getElementById('preview-box');
+    const frame = document.getElementById('preview');
+    const all = new URLSearchParams(query);
+    for (const [key, value] of Object.entries(settings)) if (!all.has(key)) all.set(key, value);
+    all.set('shift', '0');  // a still preview
+    const src = '/?' + all.toString();
+    const height = Math.round(box.clientWidth * h / w);
+    box.style.height = (shape === 'upright' ? Math.min(height, 520) : height) + 'px';
+    const zoom = Math.min(box.clientWidth / w, box.clientHeight / h);
+    frame.style.width = w + 'px';
+    frame.style.height = h + 'px';
+    frame.style.transform = `translateX(${(box.clientWidth - w * zoom) / 2}px) scale(${zoom})`;
+    if (src !== previewQuery) {
+      previewQuery = src;
+      frame.src = src;
+    }
+  }
+  window.addEventListener('resize', () => showPreview(address()));
+
+  function setMessage(text, kind) {
+    const el = document.getElementById('message');
+    el.textContent = text;
+    el.className = kind || '';
+  }
+
+  document.querySelectorAll('.choices[data-setting] button').forEach(b => b.addEventListener('click', () => {
+    settings[b.parentElement.dataset.setting] = b.dataset.value;
+    setMessage('');
+    show();
+  }));
+  document.querySelectorAll('input[type="checkbox"][data-setting]').forEach(input => input.addEventListener('change', () => {
+    settings[input.dataset.setting] = input.checked ? '1' : '0';
+    setMessage('');
+    show();
+  }));
+  document.getElementById('auto-size').addEventListener('change', e => {
+    settings.scale = e.target.checked ? '' : '1';
+    setMessage('');
+    show();
+  });
+  document.getElementById('scale').addEventListener('input', e => {
+    settings.scale = parseFloat(e.target.value).toFixed(1);
+    setMessage('');
+    show();
+  });
+  document.querySelectorAll('#shape button').forEach(b => b.addEventListener('click', () => {
+    shape = b.dataset.value;
+    document.querySelectorAll('#shape button').forEach(o => o.setAttribute('aria-pressed', String(o === b)));
+    show();
+  }));
+  document.getElementById('reset').addEventListener('click', () => {
+    settings = { ...DEFAULTS };
+    setMessage('');
+    show();
+  });
+
+  document.getElementById('save').addEventListener('click', async () => {
+    try {
+      const res = await fetch('/display', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings),
+      });
+      if (!res.ok) {
+        const answer = await res.json().catch(() => ({}));
+        throw new Error(answer.error || 'HTTP ' + res.status);
+      }
+      setMessage(T.saved, 'ok');
+    } catch (e) {
+      setMessage(T.failed + e.message, 'error');
+    }
+  });
+
+  fetch('/display', { cache: 'no-store' })
+    .then(res => res.json())
+    .then(saved => { settings = { ...DEFAULTS, ...saved }; })
+    .catch(() => {})
+    .finally(show);
+</script>
+</body>
+</html>

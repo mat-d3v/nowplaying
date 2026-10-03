@@ -230,9 +230,10 @@ class Bridge:
     # explicitly, so a local .env can't change what the tests see
     def __init__(self, mpd_port, **env):
         self.port = free_port()
+        self.data = tempfile.mkdtemp()  # what it saves
         settings = dict(MPD_HOST='127.0.0.1', MPD_PORT=str(mpd_port), PORT=str(self.port), MPD_PASSWORD='',
                         LASTFM_API_KEY='', ITUNES_ARTWORK='0', TLS_CERT='', TLS_KEY='', ALSA_CARD='99',
-                        SHAIRPORT_PIPE='', MPD_FIFO='')
+                        SHAIRPORT_PIPE='', MPD_FIFO='', DATA_DIR=self.data)
         settings.update(env)
         self.https = bool(settings['TLS_CERT'])
         self.log = tempfile.TemporaryFile('w+')
@@ -249,12 +250,15 @@ class Bridge:
                 time.sleep(0.05)
 
     def stop(self):
-        self.proc.terminate()
-        self.proc.wait(timeout=5)
-        self.log.seek(0)
-        output = self.log.read()
-        self.log.close()
-        return output
+        # What it logged; stopping twice is fine
+        if not self.log.closed:
+            self.proc.terminate()
+            self.proc.wait(timeout=5)
+            shutil.rmtree(self.data, ignore_errors=True)
+            self.log.seek(0)
+            self.output = self.log.read()
+            self.log.close()
+        return self.output
 
     def get(self, path, cafile=None):
         handlers = [urllib.request.ProxyHandler({})]  # never through an HTTP proxy
@@ -370,7 +374,7 @@ class OnlineArtStatusTest(BridgeTestCase):
 def run_check(mpd_port, **env):
     settings = dict(MPD_HOST='127.0.0.1', MPD_PORT=str(mpd_port), PORT=str(free_port()), MPD_PASSWORD='',
                     LASTFM_API_KEY='', ITUNES_ARTWORK='0', TLS_CERT='', TLS_KEY='', ALSA_CARD='99',
-                    SHAIRPORT_PIPE='', MPD_FIFO='')
+                    SHAIRPORT_PIPE='', MPD_FIFO='', DATA_DIR=tempfile.gettempdir())
     settings.update(env)
     result = subprocess.run([sys.executable, os.path.join(ROOT, 'mpd-bridge.py'), '--check'],
                             env=dict(os.environ, **settings), capture_output=True, text=True, timeout=30)
@@ -625,6 +629,70 @@ class VuMetersTest(BridgeTestCase):
         self.assertIn('VU meters (?vu=1): no mpd fifo output at', out)
         code, out = run_check(self.mpd.port, MPD_FIFO=self.fifo)
         self.assertIn("VU meters (?vu=1): mpd's fifo output at", out)
+
+
+class DisplaySettingsTest(BridgeTestCase):
+    SETTINGS = {'lang': 'fr', 'clock': '12', 'bg': 'blur', 'next': '0', 'vu': '1', 'shift': '0', 'scale': '1.5'}
+
+    def post(self, b, body, content_type='application/json', origin=None):
+        headers = {'Content-Type': content_type}
+        if origin:
+            headers['Origin'] = origin
+        conn = http.client.HTTPConnection('127.0.0.1', b.port, timeout=5)
+        try:
+            conn.request('POST', '/display', body if isinstance(body, bytes) else json.dumps(body).encode(), headers)
+            response = conn.getresponse()
+            response.read()
+            return response.status
+        finally:
+            conn.close()
+
+    def test_values(self):
+        self.assertEqual(bridge.valid_display(self.SETTINGS), self.SETTINGS)
+        self.assertEqual(bridge.valid_display({'scale': '3'}), {'scale': '3.0'})
+        self.assertEqual(bridge.valid_display({'scale': ''}), {'scale': ''})  # fits the screen
+        for wrong in ({'clock': '13'}, {'scale': '9'}, {'scale': 'nan'}, {'color': 'red'}, {'next': 0}, ['clock']):
+            with self.subTest(wrong=wrong):
+                self.assertIsNone(bridge.valid_display(wrong))
+
+    def test_saved_then_pushed_to_the_screens(self):
+        b = self.start_bridge()
+        self.assertEqual(b.get('/settings')[0], 200)
+        self.assertEqual(json.loads(b.get('/display')[2]), {})
+        conn = http.client.HTTPConnection('127.0.0.1', b.port, timeout=5)
+        self.addCleanup(conn.close)
+        conn.request('GET', '/events')
+        response = conn.getresponse()
+        read_event(response)
+        self.assertEqual(self.post(b, self.SETTINGS), 204)
+        kind, data = read_sse(response)
+        self.assertEqual((kind, data), ('settings', self.SETTINGS))  # the screens reload with them
+        self.assertEqual(json.loads(b.get('/display')[2]), self.SETTINGS)
+        with open(os.path.join(b.data, 'settings.json')) as f:
+            self.assertEqual(json.load(f), self.SETTINGS)
+        # In the page itself, so they apply from the start
+        self.assertIn(f'const SAVED = {json.dumps(self.SETTINGS)};', b.get('/')[2].decode())
+
+    def test_refused(self):
+        b = self.start_bridge()
+        self.assertEqual(self.post(b, {'clock': '13'}), 400)
+        self.assertEqual(self.post(b, b'{"clock": '), 400)
+        self.assertEqual(self.post(b, b'clock=12', 'application/x-www-form-urlencoded'), 415)
+        # Another site's page, in a browser on the network
+        self.assertEqual(self.post(b, {'clock': '12'}, origin='http://elsewhere.example'), 403)
+        self.assertEqual(self.post(b, {'clock': '12'}, origin=f'http://127.0.0.1:{b.port}'), 204)
+
+    def test_cannot_save(self):
+        b = self.start_bridge(DATA_DIR='/nonexistent/folder')
+        self.assertEqual(self.post(b, {'clock': '12'}), 500)
+        self.assertIn('cannot save the display settings', b.stop())
+        code, out = run_check(self.mpd.port, DATA_DIR='/nonexistent/folder')
+        self.assertIn('Settings page: cannot save in /nonexistent/folder', out)
+
+    def test_page_off(self):
+        b = self.start_bridge(SETTINGS_PAGE='0')
+        self.assertEqual(b.get('/settings')[0], 404)
+        self.assertEqual(self.post(b, {'clock': '12'}), 404)
 
 
 def spotify_event(port, **event):

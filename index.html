@@ -454,6 +454,15 @@
 </div>
 
 <script>
+  // Display settings saved from the settings page (/settings), filled in by
+  // the bridge as it serves this page; the page's address wins over them
+  const SAVED = /*display-settings*/{};
+  const URL_OPTIONS = new URLSearchParams(location.search);
+  const OPTIONS = {
+    get: name => URL_OPTIONS.has(name) ? URL_OPTIONS.get(name)
+      : Object.prototype.hasOwnProperty.call(SAVED, name) ? SAVED[name] : null,
+  };
+
   // One page for both languages: ?lang=fr|en, /index.fr.html, otherwise the
   // browser's own language
   const STRINGS = {
@@ -475,7 +484,7 @@
     },
   };
   const LANG = (function () {
-    const q = new URLSearchParams(location.search).get('lang');
+    const q = OPTIONS.get('lang');
     if (q && Object.prototype.hasOwnProperty.call(STRINGS, q)) return q;
     if (/\/index\.fr\.html$/.test(location.pathname)) return 'fr';
     const nav = (navigator.languages && navigator.languages[0]) || navigator.language || '';
@@ -489,7 +498,6 @@
   // ?next=0 (no "Up next" line), ?bg=blur (blurred artwork as the background),
   // ?scale=1.5 (size by hand, from 0.5 to 3, instead of fitting the screen),
   // ?shift=0 (no burn-in protection), ?vu=1 (VU meters, see below)
-  const OPTIONS   = new URLSearchParams(location.search);
   const CLOCK_12H = OPTIONS.get('clock') === '12';
   const SHOW_NEXT = OPTIONS.get('next') !== '0';
   const BG_BLUR   = OPTIONS.get('bg') === 'blur';
@@ -1040,6 +1048,8 @@
   if (window.EventSource) {
     const es = new EventSource(EVENTS_ENDPOINT + (VU ? '?vu=1' : ''));
     es.addEventListener('levels', onLevels);
+    // New display settings saved: show them (the bridge is there, it just said so)
+    es.addEventListener('settings', () => location.reload());
     es.onmessage = e => {
       eventsUp = true;
       failCount = 0;

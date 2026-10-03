@@ -48,6 +48,11 @@ SHAIRPORT_PIPE = os.environ.get('SHAIRPORT_PIPE', '/tmp/shairport-sync-metadata'
 SPOTIFY_ENABLED = os.environ.get('SPOTIFY', '1').strip().lower() not in ('0', 'false', 'no', 'off')
 # VU meters: mpd's fifo output (levels.py); empty turns them off
 MPD_FIFO = os.environ.get('MPD_FIFO', '/tmp/mpd.fifo').strip()
+# Where the bridge keeps what it saves (display settings); relative paths
+# start from this folder
+DATA_DIR = os.path.join(SCRIPT_DIR, os.environ.get('DATA_DIR', '').strip() or '.')
+# The settings page (/settings); 0 turns it off, saved settings still apply
+SETTINGS_PAGE = os.environ.get('SETTINGS_PAGE', '1').strip().lower() not in ('0', 'false', 'no', 'off')
 
 # systemd's journal already timestamps each line
 logging.basicConfig(level=logging.INFO, format=('%(levelname)s %(message)s' if os.environ.get('JOURNAL_STREAM')
@@ -510,6 +515,47 @@ def status_or_error():
         return paused[0], 200  # paused AirPlay or Spotify beats an mpd error
     return {'error': problem[0], 'detail': problem[1]}, 503
 
+# Display settings saved from the settings page, for every screen; the
+# page's address can still set each of them. The same values as there
+DISPLAY_FILE = os.path.join(DATA_DIR, 'settings.json')
+DISPLAY_CHOICES = {'lang': ('', 'en', 'fr'), 'clock': ('24', '12', '0'), 'bg': ('glow', 'blur'),
+                   'next': ('1', '0'), 'vu': ('0', '1'), 'shift': ('1', '0')}
+
+def valid_display(settings):
+    # The display settings, checked (known names, allowed values), or None
+    if not isinstance(settings, dict):
+        return None
+    clean = {}
+    for key, value in settings.items():
+        if not isinstance(value, str):
+            return None
+        if key == 'scale':  # '' fits the screen, else 0.5 to 3
+            try:
+                scale = float(value) if value else None
+            except ValueError:
+                return None
+            if scale is not None and not 0.5 <= scale <= 3:
+                return None
+            clean[key] = f'{scale:.1f}' if scale else ''
+        elif value in DISPLAY_CHOICES.get(key, ()):
+            clean[key] = value
+        else:
+            return None
+    return clean
+
+def load_display():
+    try:
+        with open(DISPLAY_FILE) as f:
+            return valid_display(json.load(f)) or {}
+    except (OSError, ValueError):
+        return {}
+
+def save_display(settings):
+    temporary = DISPLAY_FILE + '.tmp'
+    with open(temporary, 'w') as f:
+        json.dump(settings, f, indent=2)
+    os.replace(temporary, DISPLAY_FILE)  # never half a file
+
 class Broadcaster:
     # Fans each status change out to the pages listening on /events
     def __init__(self):
@@ -596,6 +642,7 @@ def watch_demo():
         publish_status()
 
 PAGE = ('index.html', 'text/html; charset=utf-8')
+SETTINGS_FILE = ('settings.html', 'text/html; charset=utf-8')
 STATIC_FILES = {
     '/': PAGE,
     '/index.html': PAGE,
@@ -607,6 +654,7 @@ STATIC_FILES = {
     '/manifest.webmanifest': ('manifest.webmanifest', 'application/manifest+json'),
     '/icon-192.png': ('assets/icon-192.png', 'image/png'),
     '/icon-512.png': ('assets/logo.png', 'image/png'),
+    '/settings': SETTINGS_FILE,
 }
 
 class Handler(BaseHTTPRequestHandler):
@@ -640,8 +688,8 @@ class Handler(BaseHTTPRequestHandler):
                     # about pages that went away
                     self.wfile.write(b': ping\n\n')
                     continue
-                if isinstance(item, tuple):  # ('levels', [left, right, left peak, right peak])
-                    self.wfile.write(f'event: levels\ndata: {json.dumps(item[1])}\n\n'.encode())
+                if isinstance(item, tuple):  # ('levels', [...]) or ('settings', {...})
+                    self.wfile.write(f'event: {item[0]}\ndata: {json.dumps(item[1])}\n\n'.encode())
                 else:
                     self.send_event(item)
         except OSError:
@@ -684,19 +732,29 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.send_response(404)
                 self.end_headers()
-        elif url.path in STATIC_FILES:
+        elif url.path == '/display':
+            self.send_json(load_display())
+        elif url.path in STATIC_FILES and (STATIC_FILES[url.path] != SETTINGS_FILE or SETTINGS_PAGE):
             filename, content_type = STATIC_FILES[url.path]
             filepath = os.path.join(SCRIPT_DIR, filename)
             try:
                 with open(filepath, 'rb') as f:
                     data = f.read()
-                self.send_response(200)
-                self.send_header('Content-Type', content_type)
-                self.end_headers()
-                self.wfile.write(data)
             except OSError:
                 self.send_response(404)
                 self.end_headers()
+                return
+            if filename == 'index.html':
+                # The saved display settings, in the page itself: they apply
+                # from the start (<, written \u003c, can't end the script)
+                saved = json.dumps(load_display()).replace('<', '\\u003c')
+                data = data.replace(b'/*display-settings*/{}', saved.encode(), 1)
+            self.send_response(200)
+            self.send_header('Content-Type', content_type)
+            if content_type.startswith('text/html'):
+                self.send_header('Cache-Control', 'no-cache')
+            self.end_headers()
+            self.wfile.write(data)
         else:
             self.send_response(404)
             self.end_headers()
@@ -705,9 +763,44 @@ class Handler(BaseHTTPRequestHandler):
         url = urllib.parse.urlparse(self.path)
         if url.path == '/spotify' and SPOTIFY:
             self.spotify_event()
+        elif url.path == '/display' and SETTINGS_PAGE:
+            self.save_display()
         else:
             self.send_response(404)
             self.end_headers()
+
+    def read_json(self):
+        # The JSON body of a request, None if there's none or it's not JSON
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+            return json.loads(self.rfile.read(length)) if 0 < length <= 65536 else None
+        except ValueError:
+            return None
+
+    def save_display(self):
+        # From the settings page. Another site's page can't post here: its
+        # browser sends its Origin, and JSON needs the bridge's leave first
+        origin = self.headers.get('Origin')
+        if origin and urllib.parse.urlparse(origin).netloc != self.headers.get('Host', ''):
+            self.send_json({'error': 'not from this page'}, 403)
+            return
+        if self.headers.get('Content-Type', '').split(';')[0].strip() != 'application/json':
+            self.send_json({'error': 'expected JSON'}, 415)
+            return
+        settings = valid_display(self.read_json())
+        if settings is None:
+            self.send_json({'error': 'unknown setting or value'}, 400)
+            return
+        try:
+            save_display(settings)
+        except OSError as e:
+            log.error('cannot save the display settings in %s: %s', DISPLAY_FILE, e)
+            self.send_json({'error': f'cannot write {DISPLAY_FILE} ({e.strerror})'}, 500)
+            return
+        log.info('display settings saved: %s', settings)
+        events.publish(('settings', settings))  # the screens reload with them
+        self.send_response(204)
+        self.end_headers()
 
     def spotify_event(self):
         # An event from librespot, posted by spotify-event.py. Only from this
@@ -716,11 +809,7 @@ class Handler(BaseHTTPRequestHandler):
         if not ipaddress.ip_address(self.client_address[0]).is_loopback:
             self.send_json({'error': 'only from this machine'}, 403)
             return
-        try:
-            length = int(self.headers.get('Content-Length', 0))
-            event = json.loads(self.rfile.read(length)) if 0 < length <= 65536 else None
-        except ValueError:
-            event = None
+        event = self.read_json()
         if not isinstance(event, dict) or not all(isinstance(v, str) for v in event.values()):
             self.send_json({'error': 'expected a JSON object of strings'}, 400)
             return
@@ -847,6 +936,14 @@ def check():
         report('ok', f'AirPlay: shairport-sync metadata pipe at {SHAIRPORT_PIPE}')
 
     _check_spotify(report)
+
+    # Settings page
+    if not SETTINGS_PAGE:
+        report('--', 'Settings page: off (SETTINGS_PAGE=0)')
+    elif os.access(DATA_DIR, os.W_OK):
+        report('ok', f'Settings page at /settings, saved in {DATA_DIR}')
+    else:
+        report('FAIL', f'Settings page: cannot save in {DATA_DIR}', 'Set DATA_DIR to a folder the bridge can write to')
 
     # VU meters
     if DEMO:

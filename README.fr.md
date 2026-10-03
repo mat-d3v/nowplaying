@@ -42,6 +42,7 @@ Ni nginx ni paquet Python à installer - le pont n'utilise que la bibliothèque 
 - Ligne « À suivre » avec le prochain morceau de la file
 - Messages clairs quand mpd est injoignable ou demande un mot de passe, et indicateur « hors ligne » si le pont ne répond plus
 - Anglais et français, selon la langue du navigateur
+- Une page de réglages pour votre téléphone : langue, horloge, fond, taille, VU-mètres... avec un aperçu ; enregistrés, tous les écrans les affichent aussitôt
 - S'adapte à tout écran, du 800×480 à la 4K : sur un petit écran, l'affichage se réduit pour laisser sa place au texte ; sur un grand, il s'agrandit
 - Écrans verticaux (une TV posée sur le côté, le Raspberry Pi Touch Display 2, les téléphones) : pochette en haut, texte en dessous
 - Appli plein écran depuis l'écran d'accueil (sur Android, il faut HTTPS ou localhost), avec Wake Lock pour garder l'écran allumé (HTTPS ou localhost aussi, voir plus bas)
@@ -83,7 +84,9 @@ Teste la connexion à mpd et son mot de passe, le format et la pochette du morce
 
 ## Options d'affichage
 
-À ajouter à l'URL, combinées avec `&` - par exemple http://localhost:8766/?bg=blur&clock=12
+Depuis un téléphone ou un ordinateur, la page de réglages les règle pour tous les écrans, avec un aperçu : http://localhost:8766/settings (ou `http://<ip-de-la-machine>:8766/settings`). Enregistrées, elles s'affichent aussitôt sur les écrans.
+
+Un écran peut aussi avoir les siennes, dans son adresse, combinées avec `&` - par exemple http://localhost:8766/?bg=blur&clock=12. Elles l'emportent sur les réglages enregistrés.
 
 | Option | Effet |
 |--------|-------|
@@ -113,6 +116,8 @@ Les réglages viennent des variables d'environnement ou d'un fichier `.env` plac
 | SHAIRPORT_PIPE | /tmp/shairport-sync-metadata | Tube de métadonnées de shairport-sync, pour AirPlay ; vide, AirPlay est coupé |
 | MPD_FIFO | /tmp/mpd.fifo | Sortie fifo de mpd, lue pour les VU-mètres ; vide, ils sont coupés |
 | SPOTIFY | 1 (activé) | Spotify Connect : ce que joue librespot (raspotify), d'après ses événements ; `0` désactive |
+| DATA_DIR | ce dossier | Où le pont enregistre les réglages d'affichage (`settings.json`) |
+| SETTINGS_PAGE | 1 (activé) | La page de réglages ; `0` la coupe (les réglages enregistrés s'appliquent toujours) |
 | DEMO | vide | `1` pour le mode démo : morceaux inventés, sans mpd |
 
 ## Lancer comme service (systemd)
@@ -129,7 +134,7 @@ Crée `.env` (demande un mot de passe mpd et une clé Last.fm, tous deux optionn
 docker compose up -d
 ```
 
-Le conteneur utilise le réseau de l'hôte : le pont joint mpd sur `127.0.0.1` et écoute sur le port 8766 de l'hôte. Les réglages viennent de `.env`, comme pour une installation locale. Le réseau hôte fonctionne directement sous Linux ; Docker Desktop (macOS, Windows) demande de l'activer dans ses réglages. Journaux : `docker compose logs -f`.
+Le conteneur utilise le réseau de l'hôte : le pont joint mpd sur `127.0.0.1` et écoute sur le port 8766 de l'hôte. Les réglages viennent de `.env`, comme pour une installation locale ; les réglages d'affichage enregistrés depuis la page de réglages vont dans un volume à part. Le réseau hôte fonctionne directement sous Linux ; Docker Desktop (macOS, Windows) demande de l'activer dans ses réglages. Journaux : `docker compose logs -f`.
 
 ## AirPlay (shairport-sync)
 

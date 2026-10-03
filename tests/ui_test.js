@@ -13,6 +13,7 @@ const ROOT = path.dirname(__dirname);
 const MPD_PORT = 16600, BRIDGE_PORT = 18766, BASE = `http://localhost:${BRIDGE_PORT}`;
 const PIPE = path.join(os.tmpdir(), `nowplaying-airplay-${process.pid}`);  // shairport-sync's metadata pipe
 const FIFO = path.join(os.tmpdir(), `nowplaying-mpd-${process.pid}.fifo`);  // mpd's fifo output, for the VU meters
+const DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'nowplaying-data-'));    // what the bridge saves
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const failures = [];
 
@@ -67,6 +68,7 @@ async function waitFor(fn, expected, timeout = 5000) {
   const bridge = start('mpd-bridge.py', [], {
     MPD_HOST: '127.0.0.1', MPD_PORT: String(MPD_PORT), PORT: String(BRIDGE_PORT), MPD_PASSWORD: '',
     LASTFM_API_KEY: '', ITUNES_ARTWORK: '0', TLS_CERT: '', TLS_KEY: '', SHAIRPORT_PIPE: PIPE, MPD_FIFO: FIFO,
+    DATA_DIR: DATA,
   });
   const browser = await chromium.launch();
   try {
@@ -231,6 +233,36 @@ async function waitFor(fn, expected, timeout = 5000) {
     spotify({ PLAYER_EVENT: 'stopped' });
     check('mpd back when Spotify stops', await waitFor(title, 'Song', 3000), 'Song');
 
+    // Settings page, on a phone: saved, they show on the screens at once;
+    // a screen's own address still wins
+    const kiosk = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+    await kiosk.goto(BASE + '/');
+    const pinned = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+    await pinned.goto(BASE + '/?clock=24');
+    const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, locale: 'fr-FR' });
+    await phone.goto(BASE + '/settings');
+    check('settings page in French', await phone.evaluate(() => document.querySelector('h1').textContent),
+      "Réglages de l'affichage");
+    await phone.click('[data-setting="clock"] button[data-value="12"]');
+    check('the preview follows the choice', await waitFor(() => phone.evaluate(() =>
+      document.getElementById('preview').getAttribute('src').includes('clock=12')), true), true);
+    await phone.click('#save');
+    check('saved', await waitFor(() => phone.evaluate(() => document.getElementById('message').className), 'ok'), 'ok');
+    // The clock's format, '' while a page reloads
+    const clockFormat = p => async () => {
+      try {
+        const text = await p.evaluate(() => document.getElementById('clock').textContent);
+        return /[AP]M$/.test(text) ? '12h' : /^\d\d:\d\d$/.test(text) ? '24h' : '';
+      } catch (e) {
+        return '';
+      }
+    };
+    check('a screen shows it right away (12-hour clock)', await waitFor(clockFormat(kiosk), '12h'), '12h');
+    check('...but not one whose address says otherwise', await clockFormat(pinned)(), '24h');
+    await phone.click('#reset');
+    await phone.click('#save');
+    check('back to the defaults', await waitFor(clockFormat(kiosk), '24h'), '24h');
+
     mpd.kill();
     check('mpd down: explained on the page', await waitFor(nothing, 'MPD unreachable'), 'MPD unreachable');
 
@@ -241,6 +273,7 @@ async function waitFor(fn, expected, timeout = 5000) {
     mpd.kill();
     fs.unlinkSync(PIPE);
     fs.unlinkSync(FIFO);
+    fs.rmSync(DATA, { recursive: true, force: true });
   }
   if (failures.length) {
     console.log(`\n${failures.length} failed`);

@@ -6,9 +6,13 @@ services:
     # install, and listens on the host's port 8766 (or PORT from .env)
     network_mode: host
     working_dir: /app
+    # What the bridge saves (display settings) goes to a volume of its own
+    environment:
+      DATA_DIR: /data
     # The whole folder: the page, its assets and .env are read from here
     volumes:
       - ./:/app:ro
+      - nowplaying-data:/data
       # AirPlay: shairport-sync's metadata pipe (see the README)
       # - /tmp/shairport-sync-metadata:/tmp/shairport-sync-metadata
       # VU meters: mpd's fifo output (see the README)
@@ -18,3 +22,6 @@ services:
     # every stop or restart waited 10 s before Docker killed it
     init: true
     restart: unless-stopped
+
+volumes:
+  nowplaying-data:
