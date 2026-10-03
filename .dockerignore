@@ -1,0 +1,15 @@
+# Only what the image needs (see the Dockerfile): never settings, keys or
+# saved data
+.git
+.github
+.env
+*.pem
+settings.json*
+history.jsonl*
+node_modules
+tests
+__pycache__
+*.pyc
+screenshot*.jpg
+assets/nowplaying-presentation.mp4
+assets/presentation-poster.jpg

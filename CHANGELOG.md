@@ -6,6 +6,7 @@
 
 - Artwork for tracks mpd has none for (no embedded picture, no cover file): looked up on the iTunes Search API, by album then by song, like radios. Only a result with the same names counts: no artwork rather than someone else's.
 - AirPlay: what shairport-sync plays shows up too (title, artist, album, artwork, progress, the device sending it), taking over from mpd while it plays.
+- A Docker image on ghcr.io, published with each release for PCs and Raspberry Pis (amd64, arm64, armv7): `docker run ... ghcr.io/mat-d3v/nowplaying`, nothing to clone. Small (Alpine, 84 MB), and not run as root.
 - Listening history (`/history`): what played, by day, from mpd, AirPlay or Spotify, with the track playing now; a track counts once it played for half its length or 4 minutes. Kept in `DATA_DIR`. Scrobbling to ListenBrainz or Last.fm as an option (`--lastfm-login` sets Last.fm up); plays that can't be sent go again later.
 - Settings page (`/settings`), made for a phone: language, clock, background, size, VU meters, "Up next" line, burn-in protection, with a live preview. Saved (in `DATA_DIR`), they show on every screen at once; a screen's own address still wins.
 - VU meters (`?vu=1`): two needles that move with what mpd plays, with a peak lamp, from mpd's "fifo" output, read only while a page shows them. The demo mode has made-up levels.

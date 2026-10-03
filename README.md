@@ -135,11 +135,16 @@ Creates `.env` (asks for an optional mpd password and Last.fm API key), installs
 
 ## Docker
 
+Each release is published as an image, for PCs and Raspberry Pis (64 and 32-bit), with nothing to clone:
+
 ```bash
-docker compose up -d
+docker run -d --name nowplaying --network host --restart unless-stopped \
+  -v nowplaying-data:/data ghcr.io/mat-d3v/nowplaying
 ```
 
-The container uses the host network: the bridge reaches mpd on `127.0.0.1` and listens on the host's port 8766. Settings come from `.env`, as with a local install; the display settings saved from the settings page go to a volume of their own. Host networking works out of the box on Linux; Docker Desktop (macOS, Windows) needs it enabled in its settings. Logs: `docker compose logs -f`.
+Settings go as `-e NAME=value` (e.g. `-e MPD_PASSWORD=secret`), or all at once from a file with `--env-file .env`. For AirPlay and the VU meters, hand it their pipes: `-v /tmp/shairport-sync-metadata:/tmp/shairport-sync-metadata -v /tmp/mpd.fifo:/tmp/mpd.fifo`; for HTTPS, your certificate: `-v ~/certs:/certs:ro -e TLS_CERT=/certs/nowplaying.pem -e TLS_KEY=/certs/nowplaying-key.pem`. Check the setup with `docker exec nowplaying python3 mpd-bridge.py --check`, and see the logs with `docker logs -f nowplaying`. What it saves (display settings, listening history) stays in the `nowplaying-data` volume.
+
+From a clone of this repository, `docker compose up -d` runs the bridge from the folder itself, your `.env`, certificates and changes included. The container uses the host network: the bridge reaches mpd on `127.0.0.1` and listens on the host's port 8766. Settings come from `.env`, as with a local install; the display settings saved from the settings page go to a volume of their own. Host networking works out of the box on Linux; Docker Desktop (macOS, Windows) needs it enabled in its settings. Logs: `docker compose logs -f`.
 
 ## AirPlay (shairport-sync)
 
@@ -256,7 +261,7 @@ npm install --no-save playwright && npx playwright install chromium
 node tests/ui_test.js                       # the page, in Chromium
 ```
 
-GitHub Actions runs both on every push, with `shellcheck` on `install.sh`.
+GitHub Actions runs both on every push, with `shellcheck` on `install.sh`, and builds and tries the Docker image.
 
 ## License
 

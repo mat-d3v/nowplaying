@@ -135,11 +135,16 @@ Crée `.env` (demande un mot de passe mpd et une clé Last.fm, tous deux optionn
 
 ## Docker
 
+Chaque version est publiée en image, pour PC et Raspberry Pi (64 et 32 bits), sans rien cloner :
+
 ```bash
-docker compose up -d
+docker run -d --name nowplaying --network host --restart unless-stopped \
+  -v nowplaying-data:/data ghcr.io/mat-d3v/nowplaying
 ```
 
-Le conteneur utilise le réseau de l'hôte : le pont joint mpd sur `127.0.0.1` et écoute sur le port 8766 de l'hôte. Les réglages viennent de `.env`, comme pour une installation locale ; les réglages d'affichage enregistrés depuis la page de réglages vont dans un volume à part. Le réseau hôte fonctionne directement sous Linux ; Docker Desktop (macOS, Windows) demande de l'activer dans ses réglages. Journaux : `docker compose logs -f`.
+Les réglages se passent avec `-e NOM=valeur` (par exemple `-e MPD_PASSWORD=secret`), ou tous d'un coup depuis un fichier avec `--env-file .env`. Pour AirPlay et les VU-mètres, donnez-lui leurs tubes : `-v /tmp/shairport-sync-metadata:/tmp/shairport-sync-metadata -v /tmp/mpd.fifo:/tmp/mpd.fifo` ; pour le HTTPS, votre certificat : `-v ~/certs:/certs:ro -e TLS_CERT=/certs/nowplaying.pem -e TLS_KEY=/certs/nowplaying-key.pem`. Vérifiez l'installation avec `docker exec nowplaying python3 mpd-bridge.py --check`, et suivez les journaux avec `docker logs -f nowplaying`. Ce qu'il enregistre (réglages d'affichage, historique d'écoute) reste dans le volume `nowplaying-data`.
+
+Depuis un clone de ce dépôt, `docker compose up -d` lance le pont depuis le dossier lui-même, avec votre `.env`, vos certificats et vos modifications. Le conteneur utilise le réseau de l'hôte : le pont joint mpd sur `127.0.0.1` et écoute sur le port 8766 de l'hôte. Les réglages viennent de `.env`, comme pour une installation locale ; les réglages d'affichage enregistrés depuis la page de réglages vont dans un volume à part. Le réseau hôte fonctionne directement sous Linux ; Docker Desktop (macOS, Windows) demande de l'activer dans ses réglages. Journaux : `docker compose logs -f`.
 
 ## AirPlay (shairport-sync)
 
@@ -256,7 +261,7 @@ npm install --no-save playwright && npx playwright install chromium
 node tests/ui_test.js                       # la page, dans Chromium
 ```
 
-GitHub Actions lance les deux à chaque push, avec `shellcheck` sur `install.sh`.
+GitHub Actions lance les deux à chaque push, avec `shellcheck` sur `install.sh`, et construit puis essaie l'image Docker.
 
 ## Licence
 

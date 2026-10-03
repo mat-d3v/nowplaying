@@ -28,3 +28,18 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Page tests
         run: node tests/ui_test.js
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build the image
+        run: docker build -t nowplaying .
+      - name: Run it (demo mode), check what it serves and saves
+        run: |
+          docker run -d --name nowplaying -e DEMO=1 -p 8766:8766 nowplaying
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8766/now >/dev/null && break; sleep 1; done
+          curl -sf http://127.0.0.1:8766/now | python3 -c "import json, sys; assert json.load(sys.stdin)['source'] == 'demo'"
+          curl -sf -X POST -H 'Content-Type: application/json' -d '{"clock": "12"}' http://127.0.0.1:8766/display
+          docker exec nowplaying python3 mpd-bridge.py --check
