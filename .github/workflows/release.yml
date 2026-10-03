@@ -27,7 +27,13 @@ jobs:
             echo "Tag $GITHUB_REF_NAME but VERSION is $version"
             exit 1
           fi
+          if [ "$GITHUB_REF_TYPE" != tag ] && gh release view "v$version" >/dev/null 2>&1; then
+            echo "::error::v$version is already released: first bump VERSION in mpd-bridge.py, and rename the changelog's \"Unreleased\" section to the new version"
+            exit 1
+          fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: Release notes from CHANGELOG.md
         run: |
           awk -v v="$VERSION" '

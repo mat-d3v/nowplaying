@@ -3,7 +3,7 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import socket, json, urllib.request, urllib.parse, re, os, threading, logging, queue, time, ssl, sys, stat
 import ipaddress, unicodedata
 
-VERSION = '1.0.0'  # with a matching section in CHANGELOG.md
+VERSION = '1.1.0'  # with a matching section in CHANGELOG.md
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def _load_dotenv(path):
