@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
-import socket, json, urllib.request, urllib.parse, re, os, threading, logging
+import socket, json, urllib.request, urllib.parse, re, os, threading, logging, queue, time
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -415,6 +415,72 @@ def status_or_error():
     return {'error': problem[0], 'detail': problem[1]}, 503
 
 PAGE = ('index.html', 'text/html; charset=utf-8')
+class Broadcaster:
+    # Fans each status change out to the pages listening on /events
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.clients = set()
+
+    def subscribe(self):
+        q = queue.Queue(maxsize=20)
+        with self.lock:
+            self.clients.add(q)
+        return q
+
+    def unsubscribe(self, q):
+        with self.lock:
+            self.clients.discard(q)
+
+    def has_clients(self):
+        with self.lock:
+            return bool(self.clients)
+
+    def publish(self, payload):
+        with self.lock:
+            clients = list(self.clients)
+        for q in clients:
+            try:
+                q.put_nowait(payload)
+            except queue.Full:
+                pass  # a stalled page: it gets the next change
+
+events = Broadcaster()
+IDLE_REFRESH = 55  # seconds without news before checking the idle connection
+
+def watch_mpd():
+    # mpd's "idle" command blocks until something changes (track, play/pause,
+    # seek, queue, options): each change is pushed to the pages right away
+    failing = False
+    while True:
+        try:
+            s = _mpd_connect()
+            failing = False
+            try:
+                if events.has_clients():
+                    events.publish(status_or_error()[0])  # catch up after a reconnect
+                s.settimeout(IDLE_REFRESH)
+                while True:
+                    s.sendall(b'idle player playlist options\n')
+                    try:
+                        response = _mpd_recv(s)
+                    except socket.timeout:
+                        # Quiet for a while: leave idle, which also checks the
+                        # connection is still alive, then wait again
+                        s.sendall(b'noidle\n')
+                        response = _mpd_recv(s)
+                    if response.startswith('ACK '):
+                        raise MPDError(response.strip())
+                    if 'changed: ' in response and events.has_clients():
+                        events.publish(status_or_error()[0])
+            finally:
+                s.close()
+        except Exception as e:
+            log.debug('mpd idle connection lost: %s', e)
+            if not failing and events.has_clients():
+                events.publish(status_or_error()[0])  # tells the pages what's wrong
+            failing = True
+            time.sleep(2)
+
 STATIC_FILES = {
     '/': PAGE,
     '/index.html': PAGE,
@@ -433,9 +499,38 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
 
+    def stream_events(self):
+        # Server-sent events: the current status, then every change
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/event-stream')
+        self.send_header('Cache-Control', 'no-cache')
+        self.send_header('X-Accel-Buffering', 'no')  # nginx: pass events through unbuffered
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        q = events.subscribe()
+        try:
+            self.wfile.write(b'retry: 2000\n\n')  # reconnect delay after a bridge restart
+            self.send_event(status_or_error()[0])
+            while True:
+                try:
+                    self.send_event(q.get(timeout=20))
+                except queue.Empty:
+                    # Keeps proxies from closing a quiet stream, and finds out
+                    # about pages that went away
+                    self.wfile.write(b': ping\n\n')
+        except OSError:
+            pass  # the page went away
+        finally:
+            events.unsubscribe(q)
+
+    def send_event(self, payload):
+        self.wfile.write(f'data: {json.dumps(payload)}\n\n'.encode())
+
     def do_GET(self):
         url = urllib.parse.urlparse(self.path)
-        if url.path == '/now':
+        if url.path == '/events':
+            self.stream_events()
+        elif url.path == '/now':
             try:
                 self.send_json(*status_or_error())
             except Exception as e:
@@ -476,4 +571,5 @@ class Handler(BaseHTTPRequestHandler):
 log.info('nowplaying bridge on port %s, mpd at %s:%s%s, Last.fm artwork %s, iTunes radio artwork %s',
          PORT, MPD_HOST, MPD_PORT, ' (with password)' if MPD_PASSWORD else '',
          'on' if LASTFM_ENABLED else 'off', 'on' if ITUNES_ENABLED else 'off')
+threading.Thread(target=watch_mpd, name='mpd-idle', daemon=True).start()
 ThreadingHTTPServer(('0.0.0.0', PORT), Handler).serve_forever()

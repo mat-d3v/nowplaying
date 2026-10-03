@@ -417,6 +417,9 @@
   document.documentElement.lang = LANG;
   document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = T[el.dataset.i18n]; });
 
+  const MPD_ENDPOINT    = window.MPD_ENDPOINT || '/now';
+  const EVENTS_ENDPOINT = MPD_ENDPOINT.replace(/now$/, 'events');
+
   let currentTrackId = null;
   let bgActive = 'a';
   let playback = null;   // {elapsed, duration, playing, at}: state from the last poll
@@ -607,8 +610,8 @@
   }
 
   async function poll() {
+    lastPoll = performance.now();
     try {
-      const MPD_ENDPOINT = window.MPD_ENDPOINT || "/now";
       // Timeout shorter than the 2s poll interval: requests can never pile up
       const res = await fetch(MPD_ENDPOINT, {
         cache: 'no-store',
@@ -619,7 +622,9 @@
       if (!res.ok && !(d && d.error)) throw new Error('HTTP ' + res.status);
       failCount = 0;
       if (offline) setOffline(false);
-      render(d);
+      // While events flow, they carry the updates: the poll is only a health
+      // check (an older answer must not undo a newer event)
+      if (!eventsUp || d.error) render(d);
     } catch(e) {
       console.error('MPD poll error:', e);
       failCount++;
@@ -745,8 +750,27 @@
   }
   setTimeout(reloadWhenReachable, 6 * 60 * 60 * 1000);
 
+  // Instant updates: the bridge pushes every change (server-sent events).
+  // Polling stays as a health check every 10 s, and takes over every 2 s
+  // whenever the event stream is down; the browser reconnects it by itself.
+  let eventsUp = false;
+  let lastPoll = 0;
+  if (window.EventSource) {
+    const es = new EventSource(EVENTS_ENDPOINT);
+    es.onmessage = e => {
+      eventsUp = true;
+      failCount = 0;
+      if (offline) setOffline(false);
+      render(JSON.parse(e.data));
+    };
+    es.onerror = () => { eventsUp = false; };
+  }
+
   poll();
-  setInterval(poll, 2000);
+  setInterval(() => {
+    if (eventsUp && performance.now() - lastPoll < 10000) return;
+    poll();
+  }, 2000);
 </script>
 </body>
 </html>
