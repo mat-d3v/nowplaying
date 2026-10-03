@@ -4,7 +4,7 @@
 Each scenario describes what mpd reports (status, current song, next song,
 embedded artwork). Switch scenarios with FakeMPD.set_scenario(), or from
 another process by sending "fake-scenario <name>" on a connection, which
-also wakes up clients waiting in "idle".
+also wakes up clients waiting in "idle" ("fake-quiet <name>" doesn't).
 
     python3 tests/fake_mpd.py --port 6600 [--password secret] [--scenario flac_hires]
 """
@@ -87,6 +87,11 @@ SCENARIOS = {
         'song': {'file': 'http://radio.example/stream', 'Name': 'Radio X',
                  'Title': 'Daft Punk - One More Time'},
     },
+    # Not something mpd sends: makes the bridge hit an unexpected error
+    'bad_status': {
+        'status': {'state': 'play', 'elapsed': 'oops', 'audio': '44100:16:2'},
+        'song': {'file': 'Music/f.flac', 'Title': 'Bad'},
+    },
     'radio_plain_title': {
         'status': _playing('44100:f:2', duration=None),
         'song': {'file': 'http://radio.example/stream', 'Name': 'Radio X', 'Title': 'Morning show'},
@@ -111,8 +116,8 @@ class _Handler(socketserver.StreamRequestHandler):
             cmd, _, arg = line.partition(' ')
             if cmd == 'close':
                 return
-            if cmd == 'fake-scenario':
-                server.set_scenario(arg)
+            if cmd in ('fake-scenario', 'fake-quiet'):
+                server.set_scenario(arg, notify=cmd == 'fake-scenario')
                 self.write('OK\n')
                 continue
             if cmd == 'password':
@@ -206,13 +211,14 @@ class FakeMPD(socketserver.ThreadingTCPServer):
     def port(self):
         return self.server_address[1]
 
-    def set_scenario(self, name):
+    def set_scenario(self, name, notify=True):
         if name not in SCENARIOS:
             raise KeyError(name)
         with self.changed:
             self.scenario = name
-            self.version += 1
-            self.changed.notify_all()
+            if notify:  # what clients waiting in "idle" get told about
+                self.version += 1
+                self.changed.notify_all()
 
     def start(self):
         threading.Thread(target=self.serve_forever, daemon=True).start()

@@ -418,7 +418,6 @@ def status_or_error():
         _mpd_problem = problem
     return {'error': problem[0], 'detail': problem[1]}, 503
 
-PAGE = ('index.html', 'text/html; charset=utf-8')
 class Broadcaster:
     # Fans each status change out to the pages listening on /events
     def __init__(self):
@@ -451,6 +450,16 @@ class Broadcaster:
 events = Broadcaster()
 IDLE_REFRESH = 55  # seconds without news before checking the idle connection
 
+def publish_status():
+    # The current status (or mpd's error) to the pages listening, if any.
+    # Never raises: the watcher thread must outlive any bug in here, or the
+    # pages would keep a live but silent event stream and freeze
+    if events.has_clients():
+        try:
+            events.publish(status_or_error()[0])
+        except Exception:
+            log.exception('cannot build the status for /events')
+
 def watch_mpd():
     # mpd's "idle" command blocks until something changes (track, play/pause,
     # seek, queue, options): each change is pushed to the pages right away
@@ -460,8 +469,7 @@ def watch_mpd():
             s = _mpd_connect()
             failing = False
             try:
-                if events.has_clients():
-                    events.publish(status_or_error()[0])  # catch up after a reconnect
+                publish_status()  # catch up after a reconnect
                 s.settimeout(IDLE_REFRESH)
                 while True:
                     s.sendall(b'idle player playlist options\n')
@@ -474,17 +482,21 @@ def watch_mpd():
                         response = _mpd_recv(s)
                     if response.startswith('ACK '):
                         raise MPDError(response.strip())
-                    if 'changed: ' in response and events.has_clients():
-                        events.publish(status_or_error()[0])
+                    if 'changed: ' in response:
+                        publish_status()
             finally:
                 s.close()
-        except Exception as e:
+        except (OSError, MPDError) as e:
             log.debug('mpd idle connection lost: %s', e)
-            if not failing and events.has_clients():
-                events.publish(status_or_error()[0])  # tells the pages what's wrong
+            if not failing:
+                publish_status()  # tells the pages what's wrong
             failing = True
             time.sleep(2)
+        except Exception:
+            log.exception('mpd watcher failed, restarting it')
+            time.sleep(2)
 
+PAGE = ('index.html', 'text/html; charset=utf-8')
 STATIC_FILES = {
     '/': PAGE,
     '/index.html': PAGE,

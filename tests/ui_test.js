@@ -18,12 +18,13 @@ function check(name, actual, expected) {
   if (!ok) failures.push(name);
 }
 
-// Switches the fake mpd's scenario (which also wakes the bridge's idle connection)
-function setScenario(name) {
+// Switches the fake mpd's scenario, which also wakes the bridge's idle
+// connection; quietly: without telling idle clients
+function setScenario(name, quiet = false) {
   return new Promise((resolve, reject) => {
     const socket = net.connect(MPD_PORT, '127.0.0.1');
     let answer = '';
-    socket.on('connect', () => socket.write(`fake-scenario ${name}\n`));
+    socket.on('connect', () => socket.write(`${quiet ? 'fake-quiet' : 'fake-scenario'} ${name}\n`));
     socket.on('data', data => {
       answer += data;
       if (/^OK$/m.test(answer)) { socket.end(); resolve(); }
@@ -107,6 +108,15 @@ async function waitFor(fn, expected, timeout = 5000) {
       title: 'One More Time', artist: 'Daft Punk', album: 'Radio X', codec: null, quality: '44.1 kHz',
       hires: false, live: true, progress: false, next: null,
     });
+
+    // A passing error only the health-check poll sees (no idle event), then
+    // mpd answering again: the poll must clear the error screen by itself
+    const screen = () => page.evaluate(() => getComputedStyle(document.getElementById('nothing')).display !== 'none'
+      ? document.getElementById('nothing-title').textContent : document.getElementById('title').textContent);
+    await setScenario('bad_status', true);
+    check('passing error shown by the health check', await waitFor(screen, 'MPD error', 12000), 'MPD error');
+    await setScenario('radio_artist_title', true);
+    check('...and cleared once mpd answers again', await waitFor(screen, 'One More Time', 12000), 'One More Time');
 
     await setScenario('stopped');
     const nothing = () => page.evaluate(() => getComputedStyle(document.getElementById('nothing')).display !== 'none'

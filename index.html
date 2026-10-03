@@ -441,9 +441,10 @@
 
   let currentTrackId = null;
   let bgActive = 'a';
-  let playback = null;   // {elapsed, duration, playing, at}: state from the last poll
+  let playback = null;   // {elapsed, duration, playing, at}: state from the last update
   let failCount = 0;
   let offline = false;
+  let showingError = false;  // an mpd error is on screen
 
   const FALLBACK_GRADIENTS = [
     'radial-gradient(ellipse at 25% 60%, #1a1a2e 0%, transparent 55%), radial-gradient(ellipse at 75% 35%, #16213e 0%, transparent 55%), #0a0a0a',
@@ -645,8 +646,9 @@
       failCount = 0;
       if (offline) setOffline(false);
       // While events flow, they carry the updates: the poll is only a health
-      // check (an older answer must not undo a newer event)
-      if (!eventsUp || d.error) render(d);
+      // check (an older answer must not undo a newer event). It still clears
+      // an error once mpd answers again, even if nothing else changed
+      if (!eventsUp || d.error || showingError) render(d);
     } catch(e) {
       console.error('MPD poll error:', e);
       failCount++;
@@ -663,6 +665,7 @@
   }
 
   function render(d) {
+    showingError = !!d.error;
     if (d.error) {
       showMessage(T[d.error] || T.mpd_error, T[d.error + 'Hint'] || d.detail || '');
       return;
@@ -689,7 +692,7 @@
     document.getElementById('info').classList.toggle('live', live);
     document.getElementById('badge-live').classList.toggle('visible', live);
 
-    // The ticker (tick) interpolates elapsed between polls for smooth progress
+    // The ticker (tick) interpolates elapsed between updates for smooth progress
     playback = { elapsed: d.elapsed, duration: d.duration, playing: isPlaying, at: performance.now() };
     tick();
 
@@ -718,7 +721,7 @@
         loadArtwork(d.art_url || '', d.artist);
       }, 300);
     } else {
-      // The format can show up one poll after the track itself
+      // The format can show up one update after the track itself
       updateAudioBadges(d);
     }
   }
@@ -733,7 +736,7 @@
     }
   }
 
-  // Smooth progress: interpolate elapsed time between polls (every 250 ms)
+  // Smooth progress: interpolate elapsed time between updates (every 250 ms)
   function tick() {
     if (!playback) return;
     let e = playback.elapsed;

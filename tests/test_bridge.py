@@ -253,6 +253,21 @@ class EventsTest(BridgeTestCase):
         self.assertEqual(self.read_event(response)['title'], 'Song MP3')
         self.assertLess(time.time() - start, 1)
 
+    def test_watcher_survives_errors(self):
+        b = self.start_bridge()
+        conn = http.client.HTTPConnection('127.0.0.1', b.port, timeout=5)
+        self.addCleanup(conn.close)
+        conn.request('GET', '/events')
+        response = conn.getresponse()
+        self.assertEqual(self.read_event(response)['title'], 'Song')
+        time.sleep(0.3)
+        self.mpd.set_scenario('bad_status')  # building the status fails
+        time.sleep(0.3)
+        status, data = b.now()
+        self.assertEqual((status, data['error']), (500, 'internal'))
+        self.mpd.set_scenario('mp3_mad')  # the watcher must still be there
+        self.assertEqual(self.read_event(response)['title'], 'Song MP3')
+
 
 @unittest.skipUnless(shutil.which('openssl'), 'needs openssl to make a test certificate')
 class HttpsTest(BridgeTestCase):
