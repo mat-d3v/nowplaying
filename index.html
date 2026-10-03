@@ -199,9 +199,13 @@
     #info.live #progress-bar, #info.live #times { display: none; }
     #info.live #audio-info { margin-bottom: 0; }
 
-    #hires-badge { display: none; }
-    #hires-badge.visible { display: inline-flex; align-items: center; }
-    #hires-badge img { height: 28px; width: auto; }
+    .badge-hires {
+      display: none;
+      background: rgba(0,0,0,0.55); color: #f6d27a;
+      border: 1px solid rgba(246,210,122,0.55);
+      font-weight: 700; letter-spacing: 1px;
+    }
+    .badge-hires.visible { display: inline-block; }
 
     #progress-bar {
       width: 100%; height: 5px; background: rgba(255,255,255,0.2);
@@ -295,6 +299,13 @@
 
     #nothing span { display: block; font-size: 14px; margin-top: 8px; opacity: 0.5; }
 
+    /* ?clock=0 and ?bg=blur (see OPTIONS in the script) */
+    body.no-clock #clock { display: none; }
+    body.bg-blur #bg-a, body.bg-blur #bg-b {
+      filter: blur(50px) brightness(0.55) saturate(1.2);
+      transform: scale(1.15);  /* hides the blur's faded edges */
+    }
+
     /* ===== Portrait (phone): artwork centered on top, info below ===== */
     @media (max-width: 700px) {
       #content {
@@ -363,9 +374,7 @@
       <span id="badge-live" class="badge badge-live"><span class="live-dot"></span><span data-i18n="live">Live</span></span>
       <span id="badge-format" class="badge badge-format" style="display:none"></span>
       <span id="badge-quality" class="badge badge-quality" style="display:none"></span>
-      <span id="hires-badge">
-        <img src="/hires.svg" alt="Hi-Res">
-      </span>
+      <span id="hires-badge" class="badge badge-hires">HI-RES</span>
     </div>
     <div id="progress-bar"><div id="progress-fill" style="width:0%"></div></div>
     <div id="times">
@@ -417,6 +426,15 @@
   document.documentElement.lang = LANG;
   document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = T[el.dataset.i18n]; });
 
+  // Display options, combined with &: ?clock=0 (hidden) or ?clock=12 (12-hour),
+  // ?next=0 (no "Up next" line), ?bg=blur (blurred artwork as the background)
+  const OPTIONS   = new URLSearchParams(location.search);
+  const CLOCK_12H = OPTIONS.get('clock') === '12';
+  const SHOW_NEXT = OPTIONS.get('next') !== '0';
+  const BG_BLUR   = OPTIONS.get('bg') === 'blur';
+  document.body.classList.toggle('no-clock', OPTIONS.get('clock') === '0');
+  document.body.classList.toggle('bg-blur', BG_BLUR);
+
   const MPD_ENDPOINT    = window.MPD_ENDPOINT || '/now';
   const EVENTS_ENDPOINT = MPD_ENDPOINT.replace(/now$/, 'events');
 
@@ -447,8 +465,10 @@
 
   function updateClock() {
     const now = new Date();
-    document.getElementById('clock').textContent =
-      String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+    const minutes = String(now.getMinutes()).padStart(2,'0');
+    document.getElementById('clock').textContent = CLOCK_12H
+      ? ((now.getHours() % 12) || 12) + ':' + minutes + (now.getHours() < 12 ? ' AM' : ' PM')
+      : String(now.getHours()).padStart(2,'0') + ':' + minutes;
   }
   updateClock();
   setInterval(updateClock, 10000);
@@ -566,7 +586,8 @@
     artworkEl.onload = function() {
       artworkEl.classList.remove('loading');
       prevEl.style.opacity = '0';
-      setTimeout(() => applyColors(artworkEl), 100);
+      if (BG_BLUR) applyBackground(`url("${artUrl.replace(/"/g, '%22')}") center / cover no-repeat, #0a0a0a`);
+      else setTimeout(() => applyColors(artworkEl), 100);
     };
 
     artworkEl.onerror = function() {
@@ -606,7 +627,7 @@
     }
     qualEl.textContent   = quality;
     qualEl.style.display = quality ? 'inline-block' : 'none';
-    hiresEl.className    = isHiRes ? 'visible' : '';
+    hiresEl.classList.toggle('visible', isHiRes);
   }
 
   async function poll() {
@@ -672,7 +693,7 @@
     tick();
 
     const nextEl = document.getElementById('next-track');
-    if (d.next_title) {
+    if (d.next_title && SHOW_NEXT) {
       document.getElementById('next-track-text').textContent =
         d.next_title + (d.next_artist ? ' — ' + d.next_artist : '');
       nextEl.style.display = 'block';
