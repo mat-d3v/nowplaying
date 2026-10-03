@@ -10,4 +10,7 @@ services:
     volumes:
       - ./:/app:ro
     command: python mpd-bridge.py
+    # Python as PID 1 ignores the stop signal: without an init process,
+    # every stop or restart waited 10 s before Docker killed it
+    init: true
     restart: unless-stopped
