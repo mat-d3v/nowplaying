@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  bridge:
+    name: Bridge tests and checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bridge tests (against a fake mpd, no dependencies)
+        run: python3 -m unittest discover -s tests -v
+      - name: Lint install.sh
+        run: shellcheck install.sh
+      - name: Check docker-compose.yml
+        run: docker compose config --quiet
+
+  page:
+    name: Page tests in Chromium
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Playwright and Chromium
+        run: |
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Page tests
+        run: node tests/ui_test.js
