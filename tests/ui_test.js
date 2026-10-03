@@ -110,13 +110,14 @@ async function waitFor(fn, expected, timeout = 5000) {
     });
 
     // A passing error only the health-check poll sees (no idle event), then
-    // mpd answering again: the poll must clear the error screen by itself
+    // mpd answering again: the poll must clear the error screen by itself.
+    // That poll runs every 10 s, on a 2 s tick: allow up to 15 s
     const screen = () => page.evaluate(() => getComputedStyle(document.getElementById('nothing')).display !== 'none'
       ? document.getElementById('nothing-title').textContent : document.getElementById('title').textContent);
     await setScenario('bad_status', true);
-    check('passing error shown by the health check', await waitFor(screen, 'MPD error', 12000), 'MPD error');
+    check('passing error shown by the health check', await waitFor(screen, 'MPD error', 15000), 'MPD error');
     await setScenario('radio_artist_title', true);
-    check('...and cleared once mpd answers again', await waitFor(screen, 'One More Time', 12000), 'One More Time');
+    check('...and cleared once mpd answers again', await waitFor(screen, 'One More Time', 15000), 'One More Time');
 
     await setScenario('stopped');
     const nothing = () => page.evaluate(() => getComputedStyle(document.getElementById('nothing')).display !== 'none'
