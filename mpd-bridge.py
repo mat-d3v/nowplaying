@@ -518,6 +518,7 @@ STATIC_FILES = {
     '/index.html': PAGE,
     # Same page: it switches to French from this path (or ?lang=fr)
     '/index.fr.html': PAGE,
+    '/hires.svg': ('hires.svg', 'image/svg+xml'),
     '/apple-touch-icon.png': ('assets/apple-touch-icon.png', 'image/png'),
     '/touch-icon-v2.png': ('assets/touch-icon-v2.png', 'image/png'),
     '/manifest.webmanifest': ('manifest.webmanifest', 'application/manifest+json'),

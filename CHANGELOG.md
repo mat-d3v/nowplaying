@@ -27,7 +27,3 @@ First release.
 - The bottom glow color came out twice too bright.
 - The kiosk page could get stuck on a browser error page after its periodic reload.
 - The installer failed on Debian 12 / Raspberry Pi OS, and the Docker setup served nothing.
-
-### Changed
-
-- The official Hi-Res Audio logo, a trademark, is replaced by the page's own badge.

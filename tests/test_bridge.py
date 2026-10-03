@@ -227,7 +227,7 @@ class StatusTest(BridgeTestCase):
 
     def test_static_routes(self):
         b = self.start_bridge()
-        for path in ('/', '/index.html', '/index.fr.html', '/?lang=fr', '/manifest.webmanifest',
+        for path in ('/', '/index.html', '/index.fr.html', '/?lang=fr', '/hires.svg', '/manifest.webmanifest',
                      '/icon-192.png', '/icon-512.png', '/touch-icon-v2.png', '/apple-touch-icon.png'):
             with self.subTest(path=path):
                 self.assertEqual(b.get(path)[0], 200)

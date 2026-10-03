@@ -200,13 +200,9 @@
     #info.live #progress-bar, #info.live #times { display: none; }
     #info.live #audio-info { margin-bottom: 0; }
 
-    .badge-hires {
-      display: none;
-      background: rgba(0,0,0,0.55); color: #f6d27a;
-      border: 1px solid rgba(246,210,122,0.55);
-      font-weight: 700; letter-spacing: 1px;
-    }
-    .badge-hires.visible { display: inline-block; }
+    #hires-badge { display: none; }
+    #hires-badge.visible { display: inline-flex; align-items: center; }
+    #hires-badge img { height: 28px; width: auto; }
 
     #progress-bar {
       width: 100%; height: 5px; background: rgba(255,255,255,0.2);
@@ -382,7 +378,9 @@
       <span id="badge-live" class="badge badge-live"><span class="live-dot"></span><span data-i18n="live">Live</span></span>
       <span id="badge-format" class="badge badge-format" style="display:none"></span>
       <span id="badge-quality" class="badge badge-quality" style="display:none"></span>
-      <span id="hires-badge" class="badge badge-hires">HI-RES</span>
+      <span id="hires-badge">
+        <img src="/hires.svg" alt="Hi-Res">
+      </span>
     </div>
     <div id="progress-bar"><div id="progress-fill" style="width:0%"></div></div>
     <div id="times">

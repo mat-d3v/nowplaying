@@ -28,7 +28,7 @@ No nginx and no Python packages required - the bridge only uses the standard lib
 - Background gradient extracted from the album art colors (or the blurred artwork, see [display options](#display-options))
 - Album art straight from mpd (embedded tags or cover file in the folder), from the iTunes Search API for radios, Last.fm as an optional fallback
 - Codec badge (FLAC, ALAC, MP3, AAC...) with bit depth and sample rate
-- Hi-Res badge for lossless files >= 88.2 kHz or >= 24 bit, and for DSD
+- Hi-Res Audio logo for lossless files >= 88.2 kHz or >= 24 bit, and for DSD
 - Radios: "Live" badge, "Artist - Title" split in two lines, station name below
 - Untagged files show their file name
 - Instant updates: the bridge pushes every change as it happens (track, pause, seek, queue)
