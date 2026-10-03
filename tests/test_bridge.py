@@ -23,6 +23,7 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 
 from fake_mpd import GRAY_PNG, FakeMPD  # noqa: E402
+import fake_shairport  # noqa: E402
 
 
 def load_bridge():
@@ -100,7 +101,8 @@ class VersionTest(unittest.TestCase):
     def test_version_has_its_changelog_section(self):
         # The release workflow takes the notes from it
         with open(os.path.join(ROOT, 'CHANGELOG.md')) as f:
-            latest = next(line.split()[1] for line in f if line.startswith('## '))
+            latest = next(line.split()[1] for line in f
+                          if line.startswith('## ') and not line.startswith('## Unreleased'))
         self.assertEqual(bridge.VERSION, latest)
 
 
@@ -139,7 +141,8 @@ class Bridge:
     def __init__(self, mpd_port, **env):
         self.port = free_port()
         settings = dict(MPD_HOST='127.0.0.1', MPD_PORT=str(mpd_port), PORT=str(self.port), MPD_PASSWORD='',
-                        LASTFM_API_KEY='', ITUNES_ARTWORK='0', TLS_CERT='', TLS_KEY='', ALSA_CARD='99')
+                        LASTFM_API_KEY='', ITUNES_ARTWORK='0', TLS_CERT='', TLS_KEY='', ALSA_CARD='99',
+                        SHAIRPORT_PIPE='')
         settings.update(env)
         self.https = bool(settings['TLS_CERT'])
         self.log = tempfile.TemporaryFile('w+')
@@ -242,7 +245,8 @@ class StatusTest(BridgeTestCase):
 
 def run_check(mpd_port, **env):
     settings = dict(MPD_HOST='127.0.0.1', MPD_PORT=str(mpd_port), PORT=str(free_port()), MPD_PASSWORD='',
-                    LASTFM_API_KEY='', ITUNES_ARTWORK='0', TLS_CERT='', TLS_KEY='', ALSA_CARD='99')
+                    LASTFM_API_KEY='', ITUNES_ARTWORK='0', TLS_CERT='', TLS_KEY='', ALSA_CARD='99',
+                    SHAIRPORT_PIPE='')
     settings.update(env)
     result = subprocess.run([sys.executable, os.path.join(ROOT, 'mpd-bridge.py'), '--check'],
                             env=dict(os.environ, **settings), capture_output=True, text=True, timeout=30)
@@ -366,6 +370,75 @@ class DemoTest(unittest.TestCase):
         first = read_event(response)['title']
         titles = [read_event(response)['title'] for _ in range(3)]
         self.assertTrue(any(title != first for title in titles), (first, titles))
+
+
+@unittest.skipUnless(hasattr(os, 'mkfifo'), 'needs named pipes')
+class AirPlayBridgeTest(BridgeTestCase):
+    def setUp(self):
+        super().setUp()  # mpd plays a FLAC ("Song")
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        self.pipe = os.path.join(tmp, 'shairport-sync-metadata')
+        os.mkfifo(self.pipe)
+
+    def send(self, scenario):
+        fake_shairport.send(self.pipe, fake_shairport.SCENARIOS[scenario])
+
+    def wait_for(self, b, check, timeout=5):
+        deadline = time.time() + timeout
+        while True:
+            status, data = b.now()
+            if check(data) or time.time() > deadline:
+                return status, data
+            time.sleep(0.05)
+
+    def test_airplay_and_mpd_take_turns(self):
+        b = self.start_bridge(SHAIRPORT_PIPE=self.pipe)
+        self.send('play')  # AirPlay plays: it wins over mpd
+        status, data = self.wait_for(b, lambda d: d.get('source') == 'airplay')
+        self.assertEqual((status, data['state'], data['title'], data['artist'], data['codec'], data['sender']),
+                         (200, 'play', 'Harbor Lights', 'June Avenue', 'AirPlay', "Mat's iPhone"))
+        art_status, _, cover = b.get(data['art_url'])
+        self.assertEqual((art_status, cover), (200, fake_shairport.COVER))
+
+        self.send('pause')  # paused while mpd plays: mpd comes back
+        status, data = self.wait_for(b, lambda d: d.get('source') == 'mpd')
+        self.assertEqual(data['title'], 'Song')
+        self.mpd.set_scenario('stopped')  # nothing else plays: the paused AirPlay shows
+        status, data = self.wait_for(b, lambda d: d.get('source') == 'airplay')
+        self.assertEqual(data['state'], 'pause')
+
+        self.send('stop')  # session over
+        status, data = self.wait_for(b, lambda d: d.get('source') == 'mpd')
+        self.assertEqual(data['source'], 'mpd')
+
+    def test_changes_are_pushed(self):
+        b = self.start_bridge(SHAIRPORT_PIPE=self.pipe)
+        conn = http.client.HTTPConnection('127.0.0.1', b.port, timeout=5)
+        self.addCleanup(conn.close)
+        conn.request('GET', '/events')
+        response = conn.getresponse()
+        self.assertEqual(read_event(response)['source'], 'mpd')
+        self.send('play')
+        titles = [read_event(response)['title']]
+        while 'Harbor Lights' not in titles:
+            titles.append(read_event(response)['title'])
+        self.send('next')
+        while titles[-1] != 'Second Wind':
+            titles.append(read_event(response)['title'])
+
+    def test_airplay_while_mpd_is_down(self):
+        b = Bridge(free_port(), SHAIRPORT_PIPE=self.pipe)
+        self.addCleanup(b.stop)
+        self.send('play')
+        status, data = self.wait_for(b, lambda d: d.get('source') == 'airplay')
+        self.assertEqual((status, data['title']), (200, 'Harbor Lights'))
+
+    def test_check_finds_the_pipe(self):
+        code, out = run_check(self.mpd.port, SHAIRPORT_PIPE=self.pipe)
+        self.assertIn('AirPlay: shairport-sync metadata pipe at', out)
+        code, out = run_check(self.mpd.port, SHAIRPORT_PIPE=self.pipe + '-missing')
+        self.assertIn('AirPlay: no shairport-sync metadata pipe at', out)
 
 
 @unittest.skipUnless(shutil.which('openssl'), 'needs openssl to make a test certificate')

@@ -31,6 +31,7 @@ No nginx and no Python packages required - the bridge only uses the standard lib
 - Hi-Res Audio logo for lossless files >= 88.2 kHz or >= 24 bit, and for DSD
 - Radios: "Live" badge, "Artist - Title" split in two lines, station name below
 - Untagged files show their file name
+- AirPlay: what's played from an iPhone, iPad or Mac through shairport-sync shows up too
 - Instant updates: the bridge pushes every change as it happens (track, pause, seek, queue)
 - Progress bar, elapsed and total time, smoothly interpolated
 - Scrolling marquee for long titles
@@ -105,6 +106,7 @@ Settings come from environment variables or from a `.env` file next to `mpd-brid
 | LASTFM_API_KEY | empty (off) | Last.fm artwork fallback when mpd has none (needs artist and album tags) |
 | TLS_CERT, TLS_KEY | empty | Certificate and private key (PEM) to serve HTTPS, see [below](#https-keeping-the-screen-on-and-installing-the-app) |
 | ALSA_CARD | 0 | ALSA card read for the audio format when mpd doesn't report it |
+| SHAIRPORT_PIPE | /tmp/shairport-sync-metadata | shairport-sync's metadata pipe, for AirPlay; empty turns AirPlay off |
 | DEMO | empty | `1` for the demo mode: made-up tracks, no mpd needed |
 
 ## Run it as a service (systemd)
@@ -122,6 +124,24 @@ docker compose up -d
 ```
 
 The container uses the host network: the bridge reaches mpd on `127.0.0.1` and listens on the host's port 8766. Settings come from `.env`, as with a local install. Host networking works out of the box on Linux; Docker Desktop (macOS, Windows) needs it enabled in its settings. Logs: `docker compose logs -f`.
+
+## AirPlay (shairport-sync)
+
+When [shairport-sync](https://github.com/mikebrady/shairport-sync) runs on the same machine, the page also shows what's played over AirPlay: title, artist, album, artwork, progress, and the device sending it. AirPlay comes first while it plays; when it's paused and mpd plays, mpd shows; when AirPlay stops, mpd comes back.
+
+In `/etc/shairport-sync.conf`, turn on the metadata (uncomment these lines in its `metadata` section), then restart it with `sudo systemctl restart shairport-sync`:
+
+```
+metadata =
+{
+	enabled = "yes";
+	include_cover_art = "yes";
+	pipe_name = "/tmp/shairport-sync-metadata";
+	pipe_timeout = 5000;
+};
+```
+
+The bridge reads that pipe by itself, and `--check` says whether it finds it. `SHAIRPORT_PIPE` sets another path, or turns AirPlay off when empty. Only one program can read the pipe. With Docker, uncomment its line in `docker-compose.yml`.
 
 ## HTTPS: keeping the screen on and installing the app
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- AirPlay: what shairport-sync plays shows up too (title, artist, album, artwork, progress, the device sending it), taking over from mpd while it plays.
+
+### Changed
+
+- No progress bar stuck at 0:00 when the duration is unknown.
+
 ## 1.0.0 - 2026-10-03
 
 First release.

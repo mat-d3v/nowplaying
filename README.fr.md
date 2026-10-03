@@ -31,6 +31,7 @@ Ni nginx ni paquet Python à installer - le pont n'utilise que la bibliothèque 
 - Logo Hi-Res Audio pour les fichiers sans perte >= 88,2 kHz ou >= 24 bits, et pour le DSD
 - Radios : badge « En direct », « Artiste - Titre » séparé sur deux lignes, nom de la station en dessous
 - Les fichiers sans tags affichent leur nom de fichier
+- AirPlay : ce qui est joué depuis un iPhone, un iPad ou un Mac via shairport-sync s'affiche aussi
 - Mises à jour instantanées : le pont pousse chaque changement dès qu'il a lieu (morceau, pause, avance, file d'attente)
 - Barre de progression avec temps écoulé et total, interpolée en douceur
 - Défilement automatique pour les titres longs
@@ -105,6 +106,7 @@ Les réglages viennent des variables d'environnement ou d'un fichier `.env` plac
 | LASTFM_API_KEY | vide (désactivé) | Secours pochettes Last.fm quand mpd n'en a pas (il faut les tags artiste et album) |
 | TLS_CERT, TLS_KEY | vide | Certificat et clé privée (PEM) pour servir en HTTPS, voir plus bas |
 | ALSA_CARD | 0 | Carte ALSA lue pour le format audio quand mpd ne le donne pas |
+| SHAIRPORT_PIPE | /tmp/shairport-sync-metadata | Tube de métadonnées de shairport-sync, pour AirPlay ; vide, AirPlay est coupé |
 | DEMO | vide | `1` pour le mode démo : morceaux inventés, sans mpd |
 
 ## Lancer comme service (systemd)
@@ -122,6 +124,24 @@ docker compose up -d
 ```
 
 Le conteneur utilise le réseau de l'hôte : le pont joint mpd sur `127.0.0.1` et écoute sur le port 8766 de l'hôte. Les réglages viennent de `.env`, comme pour une installation locale. Le réseau hôte fonctionne directement sous Linux ; Docker Desktop (macOS, Windows) demande de l'activer dans ses réglages. Journaux : `docker compose logs -f`.
+
+## AirPlay (shairport-sync)
+
+Quand [shairport-sync](https://github.com/mikebrady/shairport-sync) tourne sur la même machine, la page affiche aussi ce qui est joué en AirPlay : titre, artiste, album, pochette, progression, et l'appareil qui diffuse. AirPlay passe en premier pendant la lecture ; en pause, si mpd joue, c'est mpd qui s'affiche ; quand AirPlay s'arrête, mpd revient.
+
+Dans `/etc/shairport-sync.conf`, activez les métadonnées (décommentez ces lignes dans sa section `metadata`), puis redémarrez-le avec `sudo systemctl restart shairport-sync` :
+
+```
+metadata =
+{
+	enabled = "yes";
+	include_cover_art = "yes";
+	pipe_name = "/tmp/shairport-sync-metadata";
+	pipe_timeout = 5000;
+};
+```
+
+Le pont lit ce tube tout seul, et `--check` indique s'il le trouve. `SHAIRPORT_PIPE` change son chemin, ou coupe AirPlay s'il est vide. Un seul programme peut lire le tube. Avec Docker, décommentez sa ligne dans `docker-compose.yml`.
 
 ## HTTPS : écran allumé et installation de l'appli
 

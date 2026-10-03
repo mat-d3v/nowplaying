@@ -54,6 +54,7 @@ def status(now=None):
         'art_url': f'/art?demo={index}',
         'file': 'http://demo.example/stream' if track.get('stream') else f'Demo/{track["album"]}/{track["title"]}.flac',
         'stream': bool(track.get('stream')),
+        'source': 'demo',
         'next_title': after['title'],
         'next_artist': after['artist'],
     }

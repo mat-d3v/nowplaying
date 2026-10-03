@@ -1,8 +1,8 @@
 name: Release
 
 # Publishes a GitHub release for the version in mpd-bridge.py, with its
-# section of CHANGELOG.md as the notes (bump VERSION and add that section
-# first). Either push the tag:
+# section of CHANGELOG.md as the notes (first bump VERSION, and rename the
+# changelog's "Unreleased" section to that version). Either push the tag:
 #   git tag -a v1.0.0 -m "nowplaying 1.0.0" && git push origin v1.0.0
 # or run this workflow from the Actions tab ("Run workflow"): it tags the
 # branch it runs on itself.

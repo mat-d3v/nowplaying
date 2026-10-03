@@ -462,6 +462,7 @@
   const EVENTS_ENDPOINT = MPD_ENDPOINT.replace(/now$/, 'events');
 
   let currentTrackId = null;
+  let currentArtUrl = '';
   let bgActive = 'a';
   let playback = null;   // {elapsed, duration, playing, at}: state from the last update
   let failCount = 0;
@@ -707,12 +708,15 @@
     document.getElementById('dot').className           = 'dot' + (isPlaying ? '' : ' paused');
     document.getElementById('content').className       = isPaused ? 'paused' : '';
     document.getElementById('vignette').className      = isPaused ? 'paused' : '';
-    document.getElementById('status-text').textContent = isPlaying ? T.playing : T.paused;
+    // AirPlay: who's sending ("Playing · Mat's iPhone")
+    document.getElementById('status-text').textContent =
+      (isPlaying ? T.playing : T.paused) + (d.sender ? ' · ' + d.sender : '');
     document.getElementById('total-time').textContent   = formatTime(d.duration);
-    // Live radio: a "Live" badge instead of a progress bar stuck at 0:00
-    const live = !!d.stream && !(d.duration > 0);
-    document.getElementById('info').classList.toggle('live', live);
-    document.getElementById('badge-live').classList.toggle('visible', live);
+    // No duration (a radio, AirPlay before its progress arrives): no progress
+    // bar stuck at 0:00, and a "Live" badge for radios
+    const noDuration = !(d.duration > 0);
+    document.getElementById('info').classList.toggle('live', noDuration);
+    document.getElementById('badge-live').classList.toggle('visible', !!d.stream && noDuration);
 
     // The ticker (tick) interpolates elapsed between updates for smooth progress
     playback = { elapsed: d.elapsed, duration: d.duration, playing: isPlaying, at: performance.now() };
@@ -730,6 +734,7 @@
     const trackKey = `${d.title}|${d.artist}|${d.album}`;
     if (trackKey !== currentTrackId) {
       currentTrackId = trackKey;
+      currentArtUrl = d.art_url || '';
       setTimeout(() => {
         document.getElementById('title').textContent  = d.title  || '—';
         document.getElementById('artist').textContent = d.artist || '—';
@@ -743,8 +748,13 @@
         loadArtwork(d.art_url || '', d.artist);
       }, 300);
     } else {
-      // The format can show up one update after the track itself
+      // The format can show up one update after the track itself, and so can
+      // its artwork (AirPlay sends the cover after the title)
       updateAudioBadges(d);
+      if ((d.art_url || '') !== currentArtUrl) {
+        currentArtUrl = d.art_url || '';
+        loadArtwork(currentArtUrl, d.artist);
+      }
     }
   }
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
-import socket, json, urllib.request, urllib.parse, re, os, threading, logging, queue, time, ssl, sys
+import socket, json, urllib.request, urllib.parse, re, os, threading, logging, queue, time, ssl, sys, stat
 
 VERSION = '1.0.0'  # with a matching section in CHANGELOG.md
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -40,15 +40,19 @@ LASTFM_ENABLED = LASTFM_KEY not in ('', 'your_lastfm_api_key_here')
 ITUNES_ENABLED = os.environ.get('ITUNES_ARTWORK', '1').strip().lower() not in ('0', 'false', 'no', 'off')
 # Demo mode: made-up tracks (demo.py) instead of mpd
 DEMO = os.environ.get('DEMO', '').strip().lower() in ('1', 'true', 'yes', 'on')
+# AirPlay: shairport-sync's metadata pipe (shairport.py); empty turns it off
+SHAIRPORT_PIPE = os.environ.get('SHAIRPORT_PIPE', '/tmp/shairport-sync-metadata').strip()
 
 # systemd's journal already timestamps each line
 logging.basicConfig(level=logging.INFO, format=('%(levelname)s %(message)s' if os.environ.get('JOURNAL_STREAM')
                                                 else '%(asctime)s %(levelname)s %(message)s'))
 log = logging.getLogger('nowplaying')
 
+sys.path.insert(0, SCRIPT_DIR)  # demo.py and shairport.py
+import shairport
 if DEMO:
-    sys.path.insert(0, SCRIPT_DIR)
     import demo
+AIRPLAY = shairport.AirPlay() if SHAIRPORT_PIPE and not DEMO else None
 
 _art_cache = {}
 
@@ -399,6 +403,7 @@ def get_status():
         'art_url': art_url,
         'file': file_url,
         'stream': stream,
+        'source': 'mpd',
         'next_title': next_title,
         'next_artist': next_artist
     }
@@ -408,8 +413,12 @@ PROBLEMS = {'mpd_unreachable': 'unreachable', 'mpd_password': 'refused access (c
             'mpd_error': 'answered with an error'}
 
 def status_or_error():
-    # (payload, HTTP status): the player status, or why mpd can't give it
+    # (payload, HTTP status): what's playing, or why mpd can't say. AirPlay
+    # comes first while it plays, and while paused if mpd isn't playing
     global _mpd_problem
+    airplay = AIRPLAY.status() if AIRPLAY else None
+    if airplay and airplay['state'] == 'play':
+        return airplay, 200
     try:
         data = get_status()
     except MPDError as e:
@@ -421,10 +430,14 @@ def status_or_error():
         if _mpd_problem:
             log.info('mpd at %s:%s is back', MPD_HOST, MPD_PORT)
             _mpd_problem = None
+        if airplay and data['state'] != 'play':
+            return airplay, 200
         return data, 200
     if problem != _mpd_problem:
         log.warning('mpd at %s:%s %s: %s', MPD_HOST, MPD_PORT, PROBLEMS[problem[0]], problem[1])
         _mpd_problem = problem
+    if airplay:
+        return airplay, 200  # paused AirPlay beats an mpd error
     return {'error': problem[0], 'detail': problem[1]}, 503
 
 class Broadcaster:
@@ -576,6 +589,9 @@ class Handler(BaseHTTPRequestHandler):
             uri = qs.get('file', [''])[0]
             if DEMO and qs.get('demo', [''])[0].isdigit():
                 data, mime = demo.artwork(qs['demo'][0]), 'image/png'
+            elif AIRPLAY and 'airplay' in qs:
+                data = AIRPLAY.cover()
+                mime = _sniff_mime(data) if data else ''
             else:
                 data, mime = get_mpd_art(uri) if uri else (None, '')
             if data:
@@ -701,6 +717,19 @@ def check():
                     report('warn' if days < 30 else 'ok', text, 'Renew it soon' if days < 30 else '')
     else:
         report('--', 'HTTPS: off, so phones and tablets get no Wake Lock', 'See "HTTPS" in the README')
+
+    # AirPlay
+    if DEMO or not SHAIRPORT_PIPE:
+        report('--', 'AirPlay: off' + (' (demo mode)' if DEMO else ' (SHAIRPORT_PIPE is empty)'))
+    elif not os.path.exists(SHAIRPORT_PIPE):
+        report('--', f'AirPlay: no shairport-sync metadata pipe at {SHAIRPORT_PIPE}',
+               'To show AirPlay too, enable "metadata" in shairport-sync.conf (see the README)')
+    elif not stat.S_ISFIFO(os.stat(SHAIRPORT_PIPE).st_mode):
+        report('FAIL', f'AirPlay: {SHAIRPORT_PIPE} is not a named pipe', 'Check pipe_name in shairport-sync.conf')
+    elif not os.access(SHAIRPORT_PIPE, os.R_OK):
+        report('FAIL', f'AirPlay: no permission to read {SHAIRPORT_PIPE}', 'The bridge must be able to read the pipe')
+    else:
+        report('ok', f'AirPlay: shairport-sync metadata pipe at {SHAIRPORT_PIPE}')
 
     # Port
     try:
@@ -866,6 +895,9 @@ def main():
                  ' (with password)' if MPD_PASSWORD else '',
                  'on' if LASTFM_ENABLED else 'off', 'on' if ITUNES_ENABLED else 'off')
     threading.Thread(target=watch_demo if DEMO else watch_mpd, name='updates', daemon=True).start()
+    if AIRPLAY:
+        threading.Thread(target=shairport.follow, args=(SHAIRPORT_PIPE, AIRPLAY, publish_status, log),
+                         name='airplay', daemon=True).start()
     server.serve_forever()
 
 if __name__ == '__main__':

@@ -2,13 +2,16 @@
 //
 //   npm install --no-save playwright && npx playwright install chromium
 //   node tests/ui_test.js
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
+const fs = require('fs');
 const net = require('net');
+const os = require('os');
 const path = require('path');
 const { chromium } = require('playwright');
 
 const ROOT = path.dirname(__dirname);
 const MPD_PORT = 16600, BRIDGE_PORT = 18766, BASE = `http://localhost:${BRIDGE_PORT}`;
+const PIPE = path.join(os.tmpdir(), `nowplaying-airplay-${process.pid}`);  // shairport-sync's metadata pipe
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const failures = [];
 
@@ -33,6 +36,11 @@ function setScenario(name, quiet = false) {
   });
 }
 
+// What a fake shairport-sync sends over AirPlay ("play", "pause", "stop"...)
+function airplay(scenario) {
+  execFileSync('python3', [path.join(ROOT, 'tests/fake_shairport.py'), '--pipe', PIPE, scenario]);
+}
+
 function start(script, args, env) {
   const proc = spawn('python3', [path.join(ROOT, script), ...args],
     { env: { ...process.env, ...env }, stdio: ['ignore', 'inherit', 'inherit'] });
@@ -52,10 +60,11 @@ async function waitFor(fn, expected, timeout = 5000) {
 }
 
 (async () => {
+  execFileSync('mkfifo', [PIPE]);
   const mpd = start('tests/fake_mpd.py', ['--port', String(MPD_PORT), '--scenario', 'flac_hires'], {});
   const bridge = start('mpd-bridge.py', [], {
     MPD_HOST: '127.0.0.1', MPD_PORT: String(MPD_PORT), PORT: String(BRIDGE_PORT), MPD_PASSWORD: '',
-    LASTFM_API_KEY: '', ITUNES_ARTWORK: '0', TLS_CERT: '', TLS_KEY: '',
+    LASTFM_API_KEY: '', ITUNES_ARTWORK: '0', TLS_CERT: '', TLS_KEY: '', SHAIRPORT_PIPE: PIPE,
   });
   const browser = await chromium.launch();
   try {
@@ -153,6 +162,18 @@ async function waitFor(fn, expected, timeout = 5000) {
         document.documentElement.scrollWidth <= document.documentElement.clientWidth]), [width, true]);
     }
 
+    // AirPlay (shairport-sync) takes over while it plays, then mpd comes back
+    airplay('play');
+    check('AirPlay shown over mpd', await waitFor(title, 'Harbor Lights', 3000), 'Harbor Lights');
+    const airplayView = () => page.evaluate(() => [
+      document.getElementById('badge-format').textContent,
+      document.getElementById('status-text').textContent,
+      document.getElementById('artwork').src.includes('/art?airplay=') && document.getElementById('artwork').naturalWidth]);
+    check('AirPlay: badge, sender, cover', await waitFor(airplayView, ['AirPlay', "Playing · Mat's iPhone", 64]),
+      ['AirPlay', "Playing · Mat's iPhone", 64]);
+    airplay('stop');
+    check('mpd back when AirPlay stops', await waitFor(title, 'Song', 3000), 'Song');
+
     mpd.kill();
     check('mpd down: explained on the page', await waitFor(nothing, 'MPD unreachable'), 'MPD unreachable');
 
@@ -161,6 +182,7 @@ async function waitFor(fn, expected, timeout = 5000) {
     await browser.close();
     bridge.kill();
     mpd.kill();
+    fs.unlinkSync(PIPE);
   }
   if (failures.length) {
     console.log(`\n${failures.length} failed`);

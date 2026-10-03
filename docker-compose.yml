@@ -9,6 +9,8 @@ services:
     # The whole folder: the page, its assets and .env are read from here
     volumes:
       - ./:/app:ro
+      # AirPlay: shairport-sync's metadata pipe (see the README)
+      # - /tmp/shairport-sync-metadata:/tmp/shairport-sync-metadata
     command: python mpd-bridge.py
     # Python as PID 1 ignores the stop signal: without an init process,
     # every stop or restart waited 10 s before Docker killed it
