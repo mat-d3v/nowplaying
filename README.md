@@ -5,6 +5,11 @@
 # nowplaying
 
 <p align="center">
+  <a href="https://github.com/mat-d3v/nowplaying/actions/workflows/ci.yml"><img src="https://github.com/mat-d3v/nowplaying/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/mat-d3v/nowplaying/releases/latest"><img src="https://img.shields.io/github/v/release/mat-d3v/nowplaying" alt="Latest release"></a>
+</p>
+
+<p align="center">
   <a href="https://cdn.jsdelivr.net/gh/mat-d3v/nowplaying@main/assets/nowplaying-presentation.mp4">
     <img src="assets/presentation-poster.jpg" width="800" alt="Watch the NowPlaying presentation video">
   </a>

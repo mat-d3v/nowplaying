@@ -2,6 +2,7 @@
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import socket, json, urllib.request, urllib.parse, re, os, threading, logging, queue, time, ssl, sys
 
+VERSION = '1.0.0'  # with a matching section in CHANGELOG.md
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def _load_dotenv(path):
@@ -641,7 +642,7 @@ def check():
         except urllib.error.HTTPError as e:
             return json.loads(e.read() or b'{}')
 
-    print('nowplaying setup check\n')
+    print(f'nowplaying {VERSION} - setup check\n')
     report('ok' if sys.version_info >= (3, 7) else 'FAIL', f'Python {sys.version.split()[0]}',
            '' if sys.version_info >= (3, 7) else 'Python 3.7 or later is needed')
     env_file = os.path.join(SCRIPT_DIR, '.env')
@@ -842,6 +843,9 @@ class Server(ThreadingHTTPServer):
             self.shutdown_request(request)
 
 def main():
+    if '--version' in sys.argv[1:]:
+        print(f'nowplaying {VERSION}')
+        return
     if '--check' in sys.argv[1:]:
         raise SystemExit(check())
     server = Server(('0.0.0.0', PORT), Handler)
@@ -853,11 +857,11 @@ def main():
             log.error('cannot load TLS_CERT=%s / TLS_KEY=%s: %s', TLS_CERT, TLS_KEY, e)
             raise SystemExit(1)
     if DEMO:
-        log.info('nowplaying bridge on %s port %s, demo mode: made-up tracks, mpd is not used',
-                 'HTTPS' if server.tls else 'HTTP', PORT)
+        log.info('nowplaying %s on %s port %s, demo mode: made-up tracks, mpd is not used',
+                 VERSION, 'HTTPS' if server.tls else 'HTTP', PORT)
     else:
-        log.info('nowplaying bridge on %s port %s, mpd at %s:%s%s, Last.fm artwork %s, iTunes radio artwork %s',
-                 'HTTPS' if server.tls else 'HTTP', PORT, MPD_HOST, MPD_PORT,
+        log.info('nowplaying %s on %s port %s, mpd at %s:%s%s, Last.fm artwork %s, iTunes radio artwork %s',
+                 VERSION, 'HTTPS' if server.tls else 'HTTP', PORT, MPD_HOST, MPD_PORT,
                  ' (with password)' if MPD_PASSWORD else '',
                  'on' if LASTFM_ENABLED else 'off', 'on' if ITUNES_ENABLED else 'off')
     threading.Thread(target=watch_demo if DEMO else watch_mpd, name='updates', daemon=True).start()

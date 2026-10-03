@@ -96,6 +96,14 @@ class BadgesTest(unittest.TestCase):
                 self.assertEqual(bridge.describe_badges(*args), expected)
 
 
+class VersionTest(unittest.TestCase):
+    def test_version_has_its_changelog_section(self):
+        # The release workflow takes the notes from it
+        with open(os.path.join(ROOT, 'CHANGELOG.md')) as f:
+            latest = next(line.split()[1] for line in f if line.startswith('## '))
+        self.assertEqual(bridge.VERSION, latest)
+
+
 class DotenvTest(unittest.TestCase):
     KEYS = ('NP_TEST_A', 'NP_TEST_B', 'NP_TEST_C', 'NP_TEST_SET')
 
