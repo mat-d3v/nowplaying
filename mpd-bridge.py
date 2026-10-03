@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
-import socket, json, urllib.request, urllib.parse, re, os, threading, logging, queue, time
+import socket, json, urllib.request, urllib.parse, re, os, threading, logging, queue, time, ssl
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -28,6 +28,10 @@ MPD_HOST = os.environ.get('MPD_HOST', '127.0.0.1')
 MPD_PORT = int(os.environ.get('MPD_PORT', '6600'))
 MPD_PASSWORD = os.environ.get('MPD_PASSWORD', '')
 PORT = int(os.environ.get('PORT', '8766'))
+# HTTPS: certificate and private key files (PEM), e.g. made with mkcert.
+# Relative paths start from this folder (systemd runs the bridge from /)
+TLS_CERT = os.environ.get('TLS_CERT', '') and os.path.join(SCRIPT_DIR, os.environ['TLS_CERT'])
+TLS_KEY = os.environ.get('TLS_KEY', '') and os.path.join(SCRIPT_DIR, os.environ['TLS_KEY'])
 LASTFM_KEY = os.environ.get('LASTFM_API_KEY', '')
 # Empty, or still the placeholder of older setups: no Last.fm lookups
 LASTFM_ENABLED = LASTFM_KEY not in ('', 'your_lastfm_api_key_here')
@@ -488,6 +492,9 @@ STATIC_FILES = {
     '/index.fr.html': PAGE,
     '/apple-touch-icon.png': ('assets/apple-touch-icon.png', 'image/png'),
     '/touch-icon-v2.png': ('assets/touch-icon-v2.png', 'image/png'),
+    '/manifest.webmanifest': ('manifest.webmanifest', 'application/manifest+json'),
+    '/icon-192.png': ('assets/icon-192.png', 'image/png'),
+    '/icon-512.png': ('assets/logo.png', 'image/png'),
 }
 
 class Handler(BaseHTTPRequestHandler):
@@ -567,8 +574,40 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
     def log_message(self, *args): pass
 
-log.info('nowplaying bridge on port %s, mpd at %s:%s%s, Last.fm artwork %s, iTunes radio artwork %s',
-         PORT, MPD_HOST, MPD_PORT, ' (with password)' if MPD_PASSWORD else '',
-         'on' if LASTFM_ENABLED else 'off', 'on' if ITUNES_ENABLED else 'off')
-threading.Thread(target=watch_mpd, name='mpd-idle', daemon=True).start()
-ThreadingHTTPServer(('0.0.0.0', PORT), Handler).serve_forever()
+class Server(ThreadingHTTPServer):
+    tls = None  # ssl.SSLContext when serving HTTPS
+
+    def finish_request(self, request, client_address):
+        if not self.tls:
+            return super().finish_request(request, client_address)
+        # TLS handshake in the request's own thread, with a deadline: a slow
+        # or broken client can't hold up the others
+        try:
+            request.settimeout(10)
+            request = self.tls.wrap_socket(request, server_side=True)
+            request.settimeout(None)
+        except OSError:  # includes ssl.SSLError, e.g. plain HTTP on the HTTPS port
+            return
+        try:
+            super().finish_request(request, client_address)
+        finally:
+            self.shutdown_request(request)
+
+def main():
+    server = Server(('0.0.0.0', PORT), Handler)
+    if TLS_CERT or TLS_KEY:
+        server.tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        try:
+            server.tls.load_cert_chain(TLS_CERT, TLS_KEY or None)
+        except (OSError, ssl.SSLError) as e:
+            log.error('cannot load TLS_CERT=%s / TLS_KEY=%s: %s', TLS_CERT, TLS_KEY, e)
+            raise SystemExit(1)
+    log.info('nowplaying bridge on %s port %s, mpd at %s:%s%s, Last.fm artwork %s, iTunes radio artwork %s',
+             'HTTPS' if server.tls else 'HTTP', PORT, MPD_HOST, MPD_PORT,
+             ' (with password)' if MPD_PASSWORD else '',
+             'on' if LASTFM_ENABLED else 'off', 'on' if ITUNES_ENABLED else 'off')
+    threading.Thread(target=watch_mpd, name='mpd-idle', daemon=True).start()
+    server.serve_forever()
+
+if __name__ == '__main__':
+    main()
