@@ -1,12 +1,15 @@
 name: Release
 
-# Pushing a version tag publishes a GitHub release, with that version's
-# section of CHANGELOG.md as its notes:
-#   (bump VERSION in mpd-bridge.py, add the CHANGELOG.md section)
+# Publishes a GitHub release for the version in mpd-bridge.py, with its
+# section of CHANGELOG.md as the notes (bump VERSION and add that section
+# first). Either push the tag:
 #   git tag -a v1.0.0 -m "nowplaying 1.0.0" && git push origin v1.0.0
+# or run this workflow from the Actions tab ("Run workflow"): it tags the
+# branch it runs on itself.
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -16,17 +19,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Check the tag matches the bridge's version
+      - name: Version, and the tag matching it
         run: |
           version="$(python3 mpd-bridge.py --version | cut -d' ' -f2)"
-          test "v$version" = "$GITHUB_REF_NAME" || { echo "Tag $GITHUB_REF_NAME but VERSION is $version"; exit 1; }
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "Tag $GITHUB_REF_NAME but VERSION is $version"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
       - name: Release notes from CHANGELOG.md
         run: |
-          awk -v v="${GITHUB_REF_NAME#v}" '
+          awk -v v="$VERSION" '
             /^## / { if (found) exit; found = ($2 == v); next }
             found' CHANGELOG.md > notes.md
-          test -s notes.md || { echo "No section for ${GITHUB_REF_NAME#v} in CHANGELOG.md"; exit 1; }
+          test -s notes.md || { echo "No section for $VERSION in CHANGELOG.md"; exit 1; }
       - name: Publish the release
-        run: gh release create "$GITHUB_REF_NAME" --title "nowplaying $GITHUB_REF_NAME" --notes-file notes.md
+        run: gh release create "v$VERSION" --target "$GITHUB_SHA" --title "nowplaying v$VERSION" --notes-file notes.md
         env:
           GH_TOKEN: ${{ github.token }}
