@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
-import socket, json, urllib.request, urllib.parse, re, os, threading
+import socket, json, urllib.request, urllib.parse, re, os, threading, logging
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -26,25 +26,53 @@ _load_dotenv(os.path.join(SCRIPT_DIR, '.env'))
 
 MPD_HOST = os.environ.get('MPD_HOST', '127.0.0.1')
 MPD_PORT = int(os.environ.get('MPD_PORT', '6600'))
+MPD_PASSWORD = os.environ.get('MPD_PASSWORD', '')
 PORT = int(os.environ.get('PORT', '8766'))
 LASTFM_KEY = os.environ.get('LASTFM_API_KEY', '')
 # Empty, or still the placeholder of older setups: no Last.fm lookups
 LASTFM_ENABLED = LASTFM_KEY not in ('', 'your_lastfm_api_key_here')
+
+# systemd's journal already timestamps each line
+logging.basicConfig(level=logging.INFO, format=('%(levelname)s %(message)s' if os.environ.get('JOURNAL_STREAM')
+                                                else '%(asctime)s %(levelname)s %(message)s'))
+log = logging.getLogger('nowplaying')
 
 _art_cache = {}
 
 _mpd_sock = None
 _mpd_lock = threading.Lock()  # the HTTP server is multi-threaded, the mpd socket is shared
 
+class MPDError(Exception):
+    # An "ACK [code@index] {command} message" answer from mpd
+    def __init__(self, line):
+        super().__init__(line)
+        m = re.match(r'ACK \[(\d+)@', line)
+        self.code = int(m.group(1)) if m else 0
+
+ACK_PASSWORD, ACK_PERMISSION = 3, 4
+
+def _quote(arg):
+    return arg.replace('\\', '\\\\').replace('"', '\\"')
+
 def mpd_command(cmd):
     with _mpd_lock:
-        return _mpd_command_unlocked(cmd)
+        response = _mpd_command_unlocked(cmd)
+    if response.startswith('ACK '):
+        raise MPDError(response.strip())
+    return response
 
 def _mpd_connect():
-    s = socket.socket()
-    s.settimeout(3)  # bounds connect/send/recv: a frozen mpd can't hang requests
-    s.connect((MPD_HOST, MPD_PORT))
-    s.recv(1024)  # "OK MPD x.y.z" banner
+    s = socket.create_connection((MPD_HOST, MPD_PORT), timeout=3)  # a frozen mpd can't hang requests
+    try:
+        s.recv(1024)  # "OK MPD x.y.z" banner
+        if MPD_PASSWORD:
+            s.sendall(f'password "{_quote(MPD_PASSWORD)}"\n'.encode())
+            response = _mpd_recv(s)
+            if response.startswith('ACK '):
+                raise MPDError(response.strip())
+    except BaseException:
+        s.close()
+        raise
     return s
 
 def _mpd_recv(sock):
@@ -68,15 +96,18 @@ def _mpd_command_unlocked(cmd):
             _mpd_sock = _mpd_connect()
         _mpd_sock.sendall((cmd + '\n').encode())
         return _mpd_recv(_mpd_sock)
-    except:
-        try:
+    except Exception:
+        # mpd closes idle connections after a while: reconnect once
+        if _mpd_sock is not None:
             _mpd_sock.close()
-        except:
-            pass
         _mpd_sock = None
         s = _mpd_connect()
-        s.sendall((cmd + '\n').encode())
-        result = _mpd_recv(s)
+        try:
+            s.sendall((cmd + '\n').encode())
+            result = _mpd_recv(s)
+        except BaseException:
+            s.close()
+            raise
         _mpd_sock = s
         return result
 
@@ -111,7 +142,7 @@ def _fetch_mpd_binary(cmd, uri):
             del buf[:n]
             return data
 
-        quoted = uri.replace('\\', '\\\\').replace('"', '\\"')
+        quoted = _quote(uri)
         data = bytearray()
         mime = ''
         total = None
@@ -159,8 +190,8 @@ def get_mpd_art(uri):
             if data:
                 result = (data, mime or _sniff_mime(data))
                 break
-        except:
-            pass
+        except Exception as e:
+            log.debug('%s failed for %s: %s', cmd, uri, e)
     if len(_mpd_art_cache) > 20:
         _mpd_art_cache.clear()  # art blobs can be large, keep this cache small
     _mpd_art_cache[uri] = result
@@ -192,8 +223,8 @@ def get_alsa_format():
         if rate and bits:
             return f"{rate}:{bits}:2"
         return ''
-    except:
-        return ''
+    except OSError:
+        return ''  # no such card, or nothing playing on it
 
 def get_art_url(artist, album):
     key = f"{artist}|{album}"
@@ -219,8 +250,8 @@ def get_art_url(artist, album):
                 break
         _art_cache[key] = art
         return art
-    except:
-        pass
+    except Exception as e:
+        log.warning('Last.fm lookup failed for %s / %s: %s', artist, album, e)
     _art_cache[key] = ''
     return ''
 
@@ -299,7 +330,10 @@ def get_status():
     next_artist = ''
     ns = status.get('nextsong')
     if ns is not None and state != 'stop':
-        nxt = parse_mpd(mpd_command(f'playlistinfo {ns}'))
+        try:
+            nxt = parse_mpd(mpd_command(f'playlistinfo {ns}'))
+        except MPDError:
+            nxt = {}  # the queue changed between the two commands
         next_title = display_title(nxt)
         next_artist = nxt.get('artist', '')
     return {
@@ -318,6 +352,30 @@ def get_status():
         'next_artist': next_artist
     }
 
+_mpd_problem = None  # last mpd error logged, so each change is logged once
+PROBLEMS = {'mpd_unreachable': 'unreachable', 'mpd_password': 'refused access (check MPD_PASSWORD)',
+            'mpd_error': 'answered with an error'}
+
+def status_or_error():
+    # (payload, HTTP status): the player status, or why mpd can't give it
+    global _mpd_problem
+    try:
+        data = get_status()
+    except MPDError as e:
+        kind = 'mpd_password' if e.code in (ACK_PASSWORD, ACK_PERMISSION) else 'mpd_error'
+        problem = (kind, str(e))
+    except OSError as e:  # refused, timed out, closed...
+        problem = ('mpd_unreachable', str(e) or e.__class__.__name__)
+    else:
+        if _mpd_problem:
+            log.info('mpd at %s:%s is back', MPD_HOST, MPD_PORT)
+            _mpd_problem = None
+        return data, 200
+    if problem != _mpd_problem:
+        log.warning('mpd at %s:%s %s: %s', MPD_HOST, MPD_PORT, PROBLEMS[problem[0]], problem[1])
+        _mpd_problem = problem
+    return {'error': problem[0], 'detail': problem[1]}, 503
+
 PAGE = ('index.html', 'text/html; charset=utf-8')
 STATIC_FILES = {
     '/': PAGE,
@@ -330,20 +388,21 @@ STATIC_FILES = {
 }
 
 class Handler(BaseHTTPRequestHandler):
+    def send_json(self, data, code=200):
+        self.send_response(code)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        self.wfile.write(json.dumps(data).encode())
+
     def do_GET(self):
         url = urllib.parse.urlparse(self.path)
         if url.path == '/now':
             try:
-                data = get_status()
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self.send_header('Access-Control-Allow-Origin', '*')
-                self.end_headers()
-                self.wfile.write(json.dumps(data).encode())
+                self.send_json(*status_or_error())
             except Exception as e:
-                self.send_response(500)
-                self.end_headers()
-                self.wfile.write(str(e).encode())
+                log.exception('/now failed')
+                self.send_json({'error': 'internal', 'detail': str(e)}, 500)
         elif url.path == '/art':
             qs = urllib.parse.parse_qs(url.query)
             uri = qs.get('file', [''])[0]
@@ -368,7 +427,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header('Content-Type', content_type)
                 self.end_headers()
                 self.wfile.write(data)
-            except:
+            except OSError:
                 self.send_response(404)
                 self.end_headers()
         else:
@@ -376,4 +435,6 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
     def log_message(self, *args): pass
 
+log.info('nowplaying bridge on port %s, mpd at %s:%s%s, Last.fm artwork %s', PORT, MPD_HOST, MPD_PORT,
+         ' (with password)' if MPD_PASSWORD else '', 'on' if LASTFM_ENABLED else 'off')
 ThreadingHTTPServer(('0.0.0.0', PORT), Handler).serve_forever()

@@ -376,11 +376,17 @@
       offline: 'Offline', noArtwork: 'No artwork', waiting: 'Waiting', upNext: 'Up next',
       nothing: 'Nothing playing', waitingPlayback: 'Waiting for playback...',
       playing: 'Playing', paused: 'Paused',
+      mpd_unreachable: 'MPD unreachable', mpd_unreachableHint: 'Check that mpd is running, and MPD_HOST / MPD_PORT',
+      mpd_password: 'MPD needs a password', mpd_passwordHint: 'Set MPD_PASSWORD in .env (or check it)',
+      mpd_error: 'MPD error',
     },
     fr: {
       offline: 'Hors ligne', noArtwork: 'Aucune pochette', waiting: 'En attente', upNext: 'À suivre',
       nothing: 'Aucune lecture en cours', waitingPlayback: 'En attente de lecture...',
       playing: 'En lecture', paused: 'En pause',
+      mpd_unreachable: 'MPD injoignable', mpd_unreachableHint: 'Vérifiez que mpd tourne, ainsi que MPD_HOST / MPD_PORT',
+      mpd_password: 'MPD demande un mot de passe', mpd_passwordHint: 'Renseignez MPD_PASSWORD dans .env (ou vérifiez-le)',
+      mpd_error: 'Erreur MPD',
     },
   };
   const LANG = (function () {
@@ -591,65 +597,81 @@
         cache: 'no-store',
         signal: AbortSignal.timeout ? AbortSignal.timeout(1500) : undefined
       });
-      if (!res.ok) throw new Error('fetch failed');
       const d = await res.json();
-
-      const isPlaying = d.state === 'play';
-      const isPaused  = d.state === 'pause';
-
-      if (d.state === 'stop' || !d.title) {
-        document.getElementById('content').style.display = 'none';
-        document.getElementById('nothing').style.display = 'block';
-        return;
-      }
-
-      document.getElementById('content').style.display = 'flex';
-      document.getElementById('nothing').style.display = 'none';
-
-      document.getElementById('dot').className           = 'dot' + (isPlaying ? '' : ' paused');
-      document.getElementById('content').className       = isPaused ? 'paused' : '';
-      document.getElementById('vignette').className      = isPaused ? 'paused' : '';
-      document.getElementById('status-text').textContent = isPlaying ? T.playing : T.paused;
-      document.getElementById('total-time').textContent   = formatTime(d.duration);
-
-      // The ticker (tick) interpolates elapsed between polls for smooth progress
-      playback = { elapsed: d.elapsed, duration: d.duration, playing: isPlaying, at: performance.now() };
-      tick();
-
-      const nextEl = document.getElementById('next-track');
-      if (d.next_title) {
-        document.getElementById('next-track-text').textContent =
-          d.next_title + (d.next_artist ? ' — ' + d.next_artist : '');
-        nextEl.style.display = 'block';
-      } else {
-        nextEl.style.display = 'none';
-      }
-
-      const trackKey = `${d.title}|${d.artist}|${d.album}`;
-      if (trackKey !== currentTrackId) {
-        currentTrackId = trackKey;
-        setTimeout(() => {
-          document.getElementById('title').textContent  = d.title  || '—';
-          document.getElementById('artist').textContent = d.artist || '—';
-          document.getElementById('album').textContent  = d.album  || '';
-          setTimeout(() => {
-            setupMarquee(document.getElementById('title'));
-            setupMarquee(document.getElementById('artist'));
-            setupMarquee(document.getElementById('album'));
-          }, 200);
-          updateAudioBadges(d);
-          loadArtwork(d.art_url || '', d.artist);
-        }, 300);
-      } else {
-        // The format can show up one poll after the track itself
-        updateAudioBadges(d);
-      }
+      // The bridge answers 503 with {error} when mpd itself is the problem
+      if (!res.ok && !(d && d.error)) throw new Error('HTTP ' + res.status);
       failCount = 0;
       if (offline) setOffline(false);
+      render(d);
     } catch(e) {
       console.error('MPD poll error:', e);
       failCount++;
       if (failCount >= 3 && !offline) setOffline(true);
+    }
+  }
+
+  // Full-screen message instead of the track: nothing playing, or mpd errors
+  function showMessage(title, hint) {
+    document.getElementById('nothing-title').textContent = title;
+    document.getElementById('nothing-hint').textContent = hint;
+    document.getElementById('content').style.display = 'none';
+    document.getElementById('nothing').style.display = 'block';
+  }
+
+  function render(d) {
+    if (d.error) {
+      showMessage(T[d.error] || T.mpd_error, T[d.error + 'Hint'] || d.detail || '');
+      return;
+    }
+
+    const isPlaying = d.state === 'play';
+    const isPaused  = d.state === 'pause';
+
+    if (d.state === 'stop' || !d.title) {
+      showMessage(T.nothing, T.waitingPlayback);
+      return;
+    }
+
+    document.getElementById('content').style.display = 'flex';
+    document.getElementById('nothing').style.display = 'none';
+
+    document.getElementById('dot').className           = 'dot' + (isPlaying ? '' : ' paused');
+    document.getElementById('content').className       = isPaused ? 'paused' : '';
+    document.getElementById('vignette').className      = isPaused ? 'paused' : '';
+    document.getElementById('status-text').textContent = isPlaying ? T.playing : T.paused;
+    document.getElementById('total-time').textContent   = formatTime(d.duration);
+
+    // The ticker (tick) interpolates elapsed between polls for smooth progress
+    playback = { elapsed: d.elapsed, duration: d.duration, playing: isPlaying, at: performance.now() };
+    tick();
+
+    const nextEl = document.getElementById('next-track');
+    if (d.next_title) {
+      document.getElementById('next-track-text').textContent =
+        d.next_title + (d.next_artist ? ' — ' + d.next_artist : '');
+      nextEl.style.display = 'block';
+    } else {
+      nextEl.style.display = 'none';
+    }
+
+    const trackKey = `${d.title}|${d.artist}|${d.album}`;
+    if (trackKey !== currentTrackId) {
+      currentTrackId = trackKey;
+      setTimeout(() => {
+        document.getElementById('title').textContent  = d.title  || '—';
+        document.getElementById('artist').textContent = d.artist || '—';
+        document.getElementById('album').textContent  = d.album  || '';
+        setTimeout(() => {
+          setupMarquee(document.getElementById('title'));
+          setupMarquee(document.getElementById('artist'));
+          setupMarquee(document.getElementById('album'));
+        }, 200);
+        updateAudioBadges(d);
+        loadArtwork(d.art_url || '', d.artist);
+      }, 300);
+    } else {
+      // The format can show up one poll after the track itself
+      updateAudioBadges(d);
     }
   }
 
