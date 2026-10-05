@@ -5,7 +5,7 @@ import ssl
 import sys
 import threading
 
-from . import VERSION, check, config, history, levels, shairport, spotify, status
+from . import VERSION, check, config, history, levels, shairport, spotify, status, updates
 from .server import Handler, Server
 
 log = logging.getLogger('nowplaying')
@@ -55,6 +55,8 @@ def main():
         threading.Thread(target=shairport.follow, args=(config.SHAIRPORT_PIPE, status.AIRPLAY,
                                                         status.publish_status, log),
                          name='airplay', daemon=True).start()
+    if config.UPDATE_CHECK:
+        threading.Thread(target=updates.watch, name='version-check', daemon=True).start()
     server.serve_forever()
 
 

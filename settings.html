@@ -85,6 +85,8 @@
     .links { margin-top: 28px; text-align: center; font-size: 15px; }
     .links a { color: rgba(255,255,255,0.7); text-decoration: none; margin: 0 10px; }
     .links a:hover { color: #fff; }
+    .version { margin-top: 14px; text-align: center; font-size: 13px; color: rgba(255,255,255,0.35); }
+    .version a { color: #4ade80; text-decoration: none; }
 
     .address code {
       display: block; margin-top: 6px; padding: 10px 12px; border-radius: 10px;
@@ -164,6 +166,7 @@
     <code id="address"></code></p>
 
   <p class="links"><a href="/history" data-i18n="history">Listening history</a><a href="/" data-i18n="screen">Screen</a></p>
+  <p class="version" id="version"></p>
 </main>
 
 <script>
@@ -177,7 +180,7 @@
       size: 'Fit the screen', sizeHint: 'Otherwise, the size set below', reset: 'Defaults', save: 'Save',
       saved: 'Saved: the screens show it now', failed: 'Not saved: ',
       address: 'Or, for one screen only, these options in its address:',
-      history: 'Listening history', screen: 'Screen',
+      history: 'Listening history', screen: 'Screen', update: 'version {version} is out',
     },
     fr: {
       title: 'Réglages de l\'affichage', lead: 'Pour tous les écrans qui affichent la page. Enregistrés, ils s\'appliquent aussitôt.',
@@ -188,7 +191,7 @@
       size: 'S\'adapter à l\'écran', sizeHint: 'Sinon, la taille réglée ci-dessous', reset: 'Par défaut', save: 'Enregistrer',
       saved: 'Enregistré : les écrans l\'affichent maintenant', failed: 'Non enregistré : ',
       address: 'Ou, pour un seul écran, ces options dans son adresse :',
-      history: "Historique d'écoute", screen: 'Écran',
+      history: "Historique d'écoute", screen: 'Écran', update: 'la version {version} est sortie',
     },
   };
   const LANG = (navigator.language || '').toLowerCase().indexOf('fr') === 0 ? 'fr' : 'en';
@@ -316,6 +319,23 @@
     .then(saved => { settings = { ...DEFAULTS, ...saved }; })
     .catch(() => {})
     .finally(show);
+
+  // The version running, and a newer one if the bridge found one
+  fetch('/version', { cache: 'no-store' })
+    .then(res => res.json())
+    .then(about => {
+      const el = document.getElementById('version');
+      el.textContent = 'nowplaying ' + about.version;
+      if (about.update) {
+        const link = document.createElement('a');
+        link.href = about.update.url;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.textContent = T.update.replace('{version}', about.update.version);
+        el.append(' · ', link);
+      }
+    })
+    .catch(() => {});
 </script>
 </body>
 </html>

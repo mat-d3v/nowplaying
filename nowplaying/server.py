@@ -5,6 +5,7 @@
     /art                artwork: from mpd, AirPlay or the demo mode
     /settings, /display the settings page, and its settings (GET, POST)
     /history(.json)     the listening history
+    /version            this version, and a newer one if there is
     /spotify            librespot's events (POST, from this machine only)
 """
 import ipaddress
@@ -15,7 +16,7 @@ import queue
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import config, demo, display, mpd, status
+from . import config, demo, display, mpd, status, updates
 
 log = logging.getLogger('nowplaying')
 
@@ -109,6 +110,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_art(urllib.parse.parse_qs(url.query))
         elif url.path == '/display':
             self.send_json(display.load())
+        elif url.path == '/version':
+            self.send_json(updates.about())
         elif url.path == '/history.json':
             on = bool(status.LISTENING) and config.HISTORY_ENABLED
             self.send_json({'enabled': on, 'tracks': status.LISTENING.recent() if on else []})

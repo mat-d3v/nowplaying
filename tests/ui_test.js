@@ -10,6 +10,7 @@ const path = require('path');
 const { chromium } = require('playwright');
 
 const ROOT = path.dirname(__dirname);
+const VERSION = fs.readFileSync(path.join(ROOT, 'nowplaying/__init__.py'), 'utf8').match(/^VERSION = '([^']+)'/m)[1];
 const MPD_PORT = 16600, BRIDGE_PORT = 18766, BASE = `http://localhost:${BRIDGE_PORT}`;
 const PIPE = path.join(os.tmpdir(), `nowplaying-airplay-${process.pid}`);  // shairport-sync's metadata pipe
 const FIFO = path.join(os.tmpdir(), `nowplaying-mpd-${process.pid}.fifo`);  // mpd's fifo output, for the VU meters
@@ -77,7 +78,7 @@ async function waitFor(fn, expected, timeout = 5000) {
   const bridge = start('mpd-bridge.py', [], {
     MPD_HOST: '127.0.0.1', MPD_PORT: String(MPD_PORT), PORT: String(BRIDGE_PORT), MPD_PASSWORD: '',
     LASTFM_API_KEY: '', ITUNES_ARTWORK: '0', TLS_CERT: '', TLS_KEY: '', SHAIRPORT_PIPE: PIPE, MPD_FIFO: FIFO,
-    DATA_DIR: DATA,
+    DATA_DIR: DATA, UPDATE_CHECK: '0',
   });
   const browser = await chromium.launch();
   try {
@@ -255,9 +256,20 @@ async function waitFor(fn, expected, timeout = 5000) {
     const pinned = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
     await pinned.goto(BASE + '/?clock=24');
     const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, locale: 'fr-FR' });
+    // As if the bridge had found a newer version
+    const RELEASE = 'https://github.com/mat-d3v/nowplaying/releases/tag/v99.0.0';
+    await phone.route('**/version', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({
+      version: VERSION, update: { version: '99.0.0', url: RELEASE }, checked: true }) }));
     await phone.goto(BASE + '/settings');
     check('settings page in French', await phone.evaluate(() => document.querySelector('h1').textContent),
       "Réglages de l'affichage");
+    const versionLine = () => phone.evaluate(() => {
+      const link = document.querySelector('#version a');
+      return [document.getElementById('version').textContent, link ? link.href : ''];
+    });
+    check('the version, and the newer one', await waitFor(versionLine,
+      [`nowplaying ${VERSION} · la version 99.0.0 est sortie`, RELEASE]),
+    [`nowplaying ${VERSION} · la version 99.0.0 est sortie`, RELEASE]);
     await phone.click('[data-setting="clock"] button[data-value="12"]');
     check('the preview follows the choice', await waitFor(() => phone.evaluate(() =>
       document.getElementById('preview').getAttribute('src').includes('clock=12')), true), true);

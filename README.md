@@ -85,7 +85,7 @@ Tests the connection to mpd and its password, the current track's format and art
 
 ## Display options
 
-From a phone or a computer, the settings page sets them for every screen, with a preview: http://localhost:8766/settings (or `http://<machine-ip>:8766/settings`). Saved, they show on the screens at once.
+From a phone or a computer, the settings page sets them for every screen, with a preview: http://localhost:8766/settings (or `http://<machine-ip>:8766/settings`). Saved, they show on the screens at once. At the bottom of the page: the version running, and a link when a newer one is out.
 
 A screen can also have its own, in its address, combined with `&` - for example http://localhost:8766/?bg=blur&clock=12. They win over the saved settings.
 
@@ -123,6 +123,7 @@ Settings come from environment variables or from a `.env` file next to `mpd-brid
 | LASTFM_API_SECRET, LASTFM_SESSION_KEY | empty (off) | Scrobbling to Last.fm, with `LASTFM_API_KEY`, see [below](#listening-history) |
 | SCROBBLE_SOURCES | mpd,airplay | What gets scrobbled: `mpd`, `airplay`, `spotify` |
 | SETTINGS_PAGE | 1 (on) | The settings page; `0` turns it off (saved settings still apply) |
+| UPDATE_CHECK | 1 (on) | Once a day, asks GitHub for the latest release: the settings page, the log and `--check` say when a newer version is out. Nothing else is sent; `0` turns it off |
 | DEMO | empty | `1` for the demo mode: made-up tracks, no mpd needed |
 
 ## Run it as a service (systemd)

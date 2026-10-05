@@ -26,7 +26,7 @@ from fake_mpd import GRAY_PNG, FakeMPD  # noqa: E402
 import fake_fifo  # noqa: E402
 import fake_shairport  # noqa: E402
 import nowplaying  # noqa: E402
-from nowplaying import artwork, audio, check, config, demo, display, mpd, status  # noqa: E402
+from nowplaying import artwork, audio, check, config, demo, display, mpd, status, updates  # noqa: E402
 
 
 class CodecTest(unittest.TestCase):
@@ -200,6 +200,56 @@ class VersionTest(unittest.TestCase):
         self.assertEqual(nowplaying.VERSION, latest)
 
 
+class UpdatesTest(unittest.TestCase):
+    def release(self, tag):
+        # GitHub's answer for the latest release
+        answer = mock.MagicMock()
+        answer.__enter__.return_value.read.return_value = json.dumps(
+            {'tag_name': tag, 'html_url': f'https://github.com/mat-d3v/nowplaying/releases/tag/{tag}'}).encode()
+        return mock.patch('urllib.request.urlopen', return_value=answer)
+
+    def setUp(self):
+        patcher = mock.patch.object(updates, '_latest', None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_versions_compared(self):
+        self.assertEqual(updates.parse('v1.10.0'), (1, 10, 0))
+        self.assertIsNone(updates.parse('1.2'))
+        self.assertTrue(updates.newer('1.10.0', '1.9.3'))  # numbers, not text
+        self.assertFalse(updates.newer('1.1.1', '1.1.1'))
+        self.assertFalse(updates.newer('1.0.9', '1.1.0'))
+        self.assertFalse(updates.newer('nightly', '1.1.0'))
+
+    def test_newer_release(self):
+        self.assertEqual(updates.about()['update'], None)  # nobody asked yet
+        with self.release('v99.0.0'):
+            new = updates.refresh()
+        self.assertEqual(new, {'version': '99.0.0', 'url': 'https://github.com/mat-d3v/nowplaying/releases/tag/v99.0.0'})
+        self.assertEqual(updates.about()['update'], new)
+        self.assertEqual(updates.about()['version'], nowplaying.VERSION)
+
+    def test_this_is_the_latest(self):
+        with self.release('v' + nowplaying.VERSION):
+            self.assertIsNone(updates.refresh())
+        self.assertIsNone(updates.about()['update'])
+
+    def test_logged_once(self):
+        # The background check: once a day, a new version said once
+        calls = []
+
+        def sleep(seconds):
+            calls.append(seconds)
+            if len(calls) > 3:
+                raise StopIteration  # out of the endless loop
+        with self.release('v99.0.0'), mock.patch('time.sleep', sleep), self.assertLogs('nowplaying') as logs:
+            with self.assertRaises(StopIteration):
+                updates.watch()
+        self.assertEqual(calls, [updates.FIRST_CHECK, updates.EVERY, updates.EVERY, updates.EVERY])
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn('nowplaying 99.0.0 is out', logs.output[0])
+
+
 class DotenvTest(unittest.TestCase):
     KEYS = ('NP_TEST_A', 'NP_TEST_B', 'NP_TEST_C', 'NP_TEST_SET')
 
@@ -237,7 +287,7 @@ class Bridge:
         self.data = tempfile.mkdtemp()  # what it saves
         settings = dict(MPD_HOST='127.0.0.1', MPD_PORT=str(mpd_port), PORT=str(self.port), MPD_PASSWORD='',
                         LASTFM_API_KEY='', ITUNES_ARTWORK='0', TLS_CERT='', TLS_KEY='', ALSA_CARD='99',
-                        SHAIRPORT_PIPE='', MPD_FIFO='', DATA_DIR=self.data)
+                        SHAIRPORT_PIPE='', MPD_FIFO='', DATA_DIR=self.data, UPDATE_CHECK='0')
         settings.update(env)
         self.https = bool(settings['TLS_CERT'])
         self.log = tempfile.TemporaryFile('w+')
@@ -336,6 +386,12 @@ class StatusTest(BridgeTestCase):
                 self.assertEqual(b.get(path)[0], 200)
         self.assertEqual(b.get('/nope')[0], 404)
 
+    def test_version(self):
+        b = self.start_bridge()
+        status, _, body = b.get('/version')
+        self.assertEqual((status, json.loads(body)), (200, {'version': nowplaying.VERSION, 'update': None,
+                                                            'checked': False}))
+
     def test_mpd_unreachable(self):
         b = Bridge(free_port())
         self.addCleanup(b.stop)
@@ -381,7 +437,7 @@ class OnlineArtStatusTest(BridgeTestCase):
 def run_check(mpd_port, **env):
     settings = dict(MPD_HOST='127.0.0.1', MPD_PORT=str(mpd_port), PORT=str(free_port()), MPD_PASSWORD='',
                     LASTFM_API_KEY='', ITUNES_ARTWORK='0', TLS_CERT='', TLS_KEY='', ALSA_CARD='99',
-                    SHAIRPORT_PIPE='', MPD_FIFO='', DATA_DIR=tempfile.gettempdir())
+                    SHAIRPORT_PIPE='', MPD_FIFO='', DATA_DIR=tempfile.gettempdir(), UPDATE_CHECK='0')
     settings.update(env)
     result = subprocess.run([sys.executable, os.path.join(ROOT, 'mpd-bridge.py'), '--check'],
                             env=dict(os.environ, **settings), capture_output=True, text=True, timeout=30)
@@ -393,7 +449,8 @@ class CheckTest(BridgeTestCase):
         code, out = run_check(self.mpd.port)
         self.assertEqual(code, 0, out)
         for line in ('mpd 0.23.5 at', "Instant updates: mpd's idle command works", 'Playing: Song',
-                     'badges: FLAC, 24bit / 96.0 kHz, Hi-Res', 'Artwork: embedded in the file', 'No problem found.'):
+                     'badges: FLAC, 24bit / 96.0 kHz, Hi-Res', 'Artwork: embedded in the file',
+                     f'Version {nowplaying.VERSION} (update check off', 'No problem found.'):
             self.assertIn(line, out)
 
     def test_mpd_down(self):

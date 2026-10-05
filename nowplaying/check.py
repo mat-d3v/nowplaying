@@ -12,7 +12,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from . import VERSION, artwork, config, history, mpd, status
+from . import VERSION, artwork, config, history, mpd, status, updates
 from .audio import describe_badges, display_title, get_alsa_format, get_audio_format, get_codec
 
 RASPOTIFY_CONF = '/etc/raspotify/conf'  # raspotify's settings for librespot
@@ -208,8 +208,25 @@ def check():
     else:
         report('--', 'Last.fm artwork fallback: off (no LASTFM_API_KEY)')
 
+    check_version(report)
+
     print('\n' + ('No problem found.' if not problems else f'{problems} problem(s) to fix.'))
     return 1 if problems else 0
+
+
+def check_version(report):
+    if not config.UPDATE_CHECK:
+        report('--', f'Version {VERSION} (update check off: UPDATE_CHECK=0)')
+        return
+    try:
+        latest = updates.fetch(timeout=8)
+    except Exception as e:
+        report('--', f'Version {VERSION} (cannot ask GitHub for the latest: {e})')
+        return
+    if updates.newer(latest['version']):
+        report('warn', f'Version {VERSION}: {latest["version"]} is out', f'What\'s new, and how to update: {latest["url"]}')
+    else:
+        report('ok', f'Version {VERSION}, the latest')
 
 
 def check_spotify(report):

@@ -85,7 +85,7 @@ Teste la connexion à mpd et son mot de passe, le format et la pochette du morce
 
 ## Options d'affichage
 
-Depuis un téléphone ou un ordinateur, la page de réglages les règle pour tous les écrans, avec un aperçu : http://localhost:8766/settings (ou `http://<ip-de-la-machine>:8766/settings`). Enregistrées, elles s'affichent aussitôt sur les écrans.
+Depuis un téléphone ou un ordinateur, la page de réglages les règle pour tous les écrans, avec un aperçu : http://localhost:8766/settings (ou `http://<ip-de-la-machine>:8766/settings`). Enregistrées, elles s'affichent aussitôt sur les écrans. En bas de la page : la version en service, et un lien quand une plus récente est sortie.
 
 Un écran peut aussi avoir les siennes, dans son adresse, combinées avec `&` - par exemple http://localhost:8766/?bg=blur&clock=12. Elles l'emportent sur les réglages enregistrés.
 
@@ -123,6 +123,7 @@ Les réglages viennent des variables d'environnement ou d'un fichier `.env` plac
 | LASTFM_API_SECRET, LASTFM_SESSION_KEY | vide (désactivé) | Scrobbling vers Last.fm, avec `LASTFM_API_KEY`, voir [plus bas](#historique-découte) |
 | SCROBBLE_SOURCES | mpd,airplay | Ce qui est scrobblé : `mpd`, `airplay`, `spotify` |
 | SETTINGS_PAGE | 1 (activé) | La page de réglages ; `0` la coupe (les réglages enregistrés s'appliquent toujours) |
+| UPDATE_CHECK | 1 (activé) | Une fois par jour, demande à GitHub la dernière version publiée : la page de réglages, le journal et `--check` signalent une version plus récente. Rien d'autre n'est envoyé ; `0` désactive |
 | DEMO | vide | `1` pour le mode démo : morceaux inventés, sans mpd |
 
 ## Lancer comme service (systemd)

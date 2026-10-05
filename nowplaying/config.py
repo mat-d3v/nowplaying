@@ -80,3 +80,6 @@ LISTENBRAINZ_TOKEN = os.environ.get('LISTENBRAINZ_TOKEN', '').strip()
 LASTFM_SECRET = os.environ.get('LASTFM_API_SECRET', '').strip()
 LASTFM_SESSION = os.environ.get('LASTFM_SESSION_KEY', '').strip()
 SCROBBLE_SOURCES = [s.strip() for s in os.environ.get('SCROBBLE_SOURCES', 'mpd,airplay').split(',') if s.strip()]
+
+# Once a day, ask GitHub whether a newer version is out (updates.py)
+UPDATE_CHECK = _on('UPDATE_CHECK')

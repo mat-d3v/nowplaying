@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- The settings page shows the version running, and when a newer one is out, with a link to what's new: once a day the bridge asks GitHub for its latest release (nothing else is sent; `UPDATE_CHECK=0` turns it off). The log and `--check` say so too.
+
 ### Changed
 
 - The bridge's code is split into modules, in the `nowplaying` folder next to `mpd-bridge.py`, which still starts it: same commands, same settings. An install that copies files by hand needs that folder too (`git pull` brings it).
