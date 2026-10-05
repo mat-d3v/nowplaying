@@ -445,11 +445,12 @@ def read_sse(response):
             return kind, json.loads(line[6:])
 
 
-def read_event(response):
-    # The next status update's payload
+def read_event(response, wanted='message'):
+    # The payload of the next event of that type: a status update, unless
+    # asked for another
     while True:
         kind, data = read_sse(response)
-        if kind == 'message':
+        if kind == wanted:
             return data
 
 
@@ -668,8 +669,7 @@ class DisplaySettingsTest(BridgeTestCase):
         response = conn.getresponse()
         read_event(response)
         self.assertEqual(self.post(b, self.SETTINGS), 204)
-        kind, data = read_sse(response)
-        self.assertEqual((kind, data), ('settings', self.SETTINGS))  # the screens reload with them
+        self.assertEqual(read_event(response, 'settings'), self.SETTINGS)  # the screens reload with them
         self.assertEqual(json.loads(b.get('/display')[2]), self.SETTINGS)
         with open(os.path.join(b.data, 'settings.json')) as f:
             self.assertEqual(json.load(f), self.SETTINGS)
