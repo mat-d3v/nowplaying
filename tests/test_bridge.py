@@ -1,9 +1,8 @@
-"""Tests for mpd-bridge.py: its helpers, and the real bridge against a fake mpd.
+"""Tests for the bridge: its modules, and mpd-bridge.py against a fake mpd.
 
     python3 -m unittest discover -s tests -v
 """
 import http.client
-import importlib.util
 import json
 import os
 import shutil
@@ -21,21 +20,13 @@ from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-sys.path.insert(0, HERE)
+sys.path[:0] = [HERE, ROOT]
 
 from fake_mpd import GRAY_PNG, FakeMPD  # noqa: E402
 import fake_fifo  # noqa: E402
 import fake_shairport  # noqa: E402
-
-
-def load_bridge():
-    spec = importlib.util.spec_from_file_location('bridge', os.path.join(ROOT, 'mpd-bridge.py'))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)  # main() only runs as a script
-    return module
-
-
-bridge = load_bridge()
+import nowplaying  # noqa: E402
+from nowplaying import artwork, audio, check, config, demo, display, mpd, status  # noqa: E402
 
 
 class CodecTest(unittest.TestCase):
@@ -71,9 +62,9 @@ class CodecTest(unittest.TestCase):
             ('http://radio.example/stream', 'dsd64:2'): ('', False),
             ('', ''): ('', False),
         }
-        for (uri, audio), expected in cases.items():
-            with self.subTest(uri=uri, audio=audio):
-                self.assertEqual(bridge.get_codec(uri, audio), expected)
+        for (uri, fmt), expected in cases.items():
+            with self.subTest(uri=uri, audio=fmt):
+                self.assertEqual(audio.get_codec(uri, fmt), expected)
 
 
 class DisplayTitleTest(unittest.TestCase):
@@ -87,20 +78,20 @@ class DisplayTitleTest(unittest.TestCase):
         ]
         for song, expected in cases:
             with self.subTest(song=song):
-                self.assertEqual(bridge.display_title(song), expected)
+                self.assertEqual(audio.display_title(song), expected)
 
 
 class AudioFormatTest(unittest.TestCase):
     def test_mpd_source_format_first(self):
-        with mock.patch.object(bridge, 'get_alsa_format', return_value='44100:32:2'):
-            for audio in ('44100:16:2', '96000:24:2', '44100:f:2', 'dsd64:2'):
-                with self.subTest(audio=audio):
-                    self.assertEqual(bridge.get_audio_format({'audio': audio}), audio)
+        with mock.patch.object(audio, 'get_alsa_format', return_value='44100:32:2'):
+            for fmt in ('44100:16:2', '96000:24:2', '44100:f:2', 'dsd64:2'):
+                with self.subTest(audio=fmt):
+                    self.assertEqual(audio.get_audio_format({'audio': fmt}), fmt)
 
     def test_alsa_fallback(self):
-        with mock.patch.object(bridge, 'get_alsa_format', return_value='48000:32:2'):
-            self.assertEqual(bridge.get_audio_format({}), '48000:32:2')
-            self.assertEqual(bridge.get_audio_format({'audio': 'garbage'}), '48000:32:2')
+        with mock.patch.object(audio, 'get_alsa_format', return_value='48000:32:2'):
+            self.assertEqual(audio.get_audio_format({}), '48000:32:2')
+            self.assertEqual(audio.get_audio_format({'audio': 'garbage'}), '48000:32:2')
 
 
 class BadgesTest(unittest.TestCase):
@@ -116,7 +107,7 @@ class BadgesTest(unittest.TestCase):
         ]
         for args, expected in cases:
             with self.subTest(args=args):
-                self.assertEqual(bridge.describe_badges(*args), expected)
+                self.assertEqual(audio.describe_badges(*args), expected)
 
 
 def album(name, artist, art):
@@ -141,11 +132,11 @@ class OnlineArtTest(unittest.TestCase):
                              ('Get Lucky - Single', 'get lucky'), ('Beyoncé', 'beyonce'), ('AC/DC', 'ac dc'),
                              ('坂本龍一', '坂本龍一'), ('(Live)', 'live')]:
             with self.subTest(name=name):
-                self.assertEqual(bridge.simplify(name), simple)
-        self.assertTrue(bridge.names_match('Daft Punk', 'Daft Punk feat. Pharrell Williams'))
-        self.assertFalse(bridge.names_match('Art', 'The Smart Band'))  # whole words only
-        self.assertFalse(bridge.names_match('Greatest Hits', 'Greatest Hits, Vol. 2', exact=True))
-        self.assertFalse(bridge.names_match('', 'Anything'))
+                self.assertEqual(artwork.simplify(name), simple)
+        self.assertTrue(artwork.names_match('Daft Punk', 'Daft Punk feat. Pharrell Williams'))
+        self.assertFalse(artwork.names_match('Art', 'The Smart Band'))  # whole words only
+        self.assertFalse(artwork.names_match('Greatest Hits', 'Greatest Hits, Vol. 2', exact=True))
+        self.assertFalse(artwork.names_match('', 'Anything'))
 
     def test_itunes_album_then_song(self):
         searches = {
@@ -155,17 +146,17 @@ class OnlineArtTest(unittest.TestCase):
             ('Various Artists Now 99', 'album'): [],
             ('Daft Punk One More Time', 'song'): [song('One More Time (Radio Edit)', 'Daft Punk', 'omt')],
         }
-        with mock.patch.object(bridge, 'itunes_search', side_effect=lambda *a: searches.get(a, [])):
+        with mock.patch.object(artwork, 'itunes_search', side_effect=lambda *a: searches.get(a, [])):
             # The album itself, rather than its live version or a namesake
-            self.assertEqual(bridge.itunes_art('Daft Punk', 'Aerodynamic', 'Discovery'),
+            self.assertEqual(artwork.itunes_art('Daft Punk', 'Aerodynamic', 'Discovery'),
                              'https://is1.example/discovery/600x600bb.jpg')
             # A compilation: its album artist, then the song by its artist
-            self.assertEqual(bridge.itunes_art('Daft Punk', 'One More Time', 'Now 99', 'Various Artists'),
+            self.assertEqual(artwork.itunes_art('Daft Punk', 'One More Time', 'Now 99', 'Various Artists'),
                              'https://is1.example/omt/600x600bb.jpg')
             # Radios: the song
-            self.assertEqual(bridge.itunes_art('Daft Punk', 'One More Time'), 'https://is1.example/omt/600x600bb.jpg')
+            self.assertEqual(artwork.itunes_art('Daft Punk', 'One More Time'), 'https://is1.example/omt/600x600bb.jpg')
             # Nobody of that name: no artwork rather than someone else's
-            self.assertEqual(bridge.itunes_art('Nobody', 'One More Time'), '')
+            self.assertEqual(artwork.itunes_art('Nobody', 'One More Time'), '')
 
     def test_lookups_run_in_the_background(self):
         release, calls = threading.Event(), []
@@ -175,12 +166,12 @@ class OnlineArtTest(unittest.TestCase):
             release.wait(5)
             return 'https://art.example/a.jpg'
         key = ('Test', 'background', str(time.time()))
-        with mock.patch.object(bridge, 'publish_status') as published:
-            self.assertIsNone(bridge.online_art(key, lookup))  # started: not known yet
-            self.assertIsNone(bridge.online_art(key, lookup))  # still running: not started twice
+        with mock.patch.object(artwork, 'changed') as published:
+            self.assertIsNone(artwork.online_art(key, lookup))  # started: not known yet
+            self.assertIsNone(artwork.online_art(key, lookup))  # still running: not started twice
             release.set()
             wait_until(lambda: published.called)  # the page gets the artwork
-            self.assertEqual(bridge.online_art(key, lookup), 'https://art.example/a.jpg')
+            self.assertEqual(artwork.online_art(key, lookup), 'https://art.example/a.jpg')
         self.assertEqual(len(calls), 1)
 
     def test_failed_lookups_run_again_later(self):
@@ -190,12 +181,12 @@ class OnlineArtTest(unittest.TestCase):
             calls.append(1)
             raise OSError('no network yet')
         key = ('Test', 'failing', str(time.time()))
-        with mock.patch.object(bridge, 'publish_status') as published, self.assertLogs('nowplaying', 'WARNING'):
-            bridge.online_art(key, failing)
+        with mock.patch.object(artwork, 'changed') as published, self.assertLogs('nowplaying', 'WARNING'):
+            artwork.online_art(key, failing)
             wait_until(lambda: published.call_count == 1)
-            self.assertEqual(bridge.online_art(key, failing), '')  # not again right away
-            with mock.patch.object(bridge, 'RETRY_AFTER', 0):
-                self.assertIsNone(bridge.online_art(key, failing))
+            self.assertEqual(artwork.online_art(key, failing), '')  # not again right away
+            with mock.patch.object(artwork, 'RETRY_AFTER', 0):
+                self.assertIsNone(artwork.online_art(key, failing))
                 wait_until(lambda: published.call_count == 2)
         self.assertEqual(len(calls), 2)
 
@@ -206,7 +197,7 @@ class VersionTest(unittest.TestCase):
         with open(os.path.join(ROOT, 'CHANGELOG.md')) as f:
             latest = next(line.split()[1] for line in f
                           if line.startswith('## ') and not line.startswith('## Unreleased'))
-        self.assertEqual(bridge.VERSION, latest)
+        self.assertEqual(nowplaying.VERSION, latest)
 
 
 class DotenvTest(unittest.TestCase):
@@ -222,14 +213,14 @@ class DotenvTest(unittest.TestCase):
                     "NP_TEST_C='x'\nNP_TEST_SET=from-file\n")
         self.addCleanup(os.unlink, f.name)
         os.environ['NP_TEST_SET'] = 'from-env'
-        bridge._load_dotenv(f.name)
+        config.load_dotenv(f.name)
         self.assertEqual(os.environ['NP_TEST_A'], '1')  # still read after the bad line
         self.assertEqual(os.environ['NP_TEST_B'], 'two words')
         self.assertEqual(os.environ['NP_TEST_C'], 'x')
         self.assertEqual(os.environ['NP_TEST_SET'], 'from-env')  # the environment wins
 
     def test_missing_file(self):
-        bridge._load_dotenv('/nonexistent/.env')  # no error
+        config.load_dotenv('/nonexistent/.env')  # no error
 
 
 def free_port():
@@ -356,31 +347,34 @@ class OnlineArtStatusTest(BridgeTestCase):
     # The bridge's own get_status(), in this process, against the fake mpd
     def setUp(self):
         super().setUp()
-        patcher = mock.patch.multiple(bridge, MPD_HOST='127.0.0.1', MPD_PORT=self.mpd.port, MPD_PASSWORD='',
-                                      ITUNES_ENABLED=True, LASTFM_ENABLED=False, publish_status=mock.DEFAULT)
-        self.published = patcher.start()['publish_status']
+        patcher = mock.patch.multiple(config, MPD_HOST='127.0.0.1', MPD_PORT=self.mpd.port, MPD_PASSWORD='',
+                                      ITUNES_ENABLED=True, LASTFM_ENABLED=False, DEMO=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(status, 'publish_status')
+        self.published = patcher.start()
         self.addCleanup(patcher.stop)
         self.addCleanup(self.close_mpd)
 
     def close_mpd(self):
-        if bridge._mpd_sock:
-            bridge._mpd_sock.close()
-            bridge._mpd_sock = None
+        if mpd._sock:
+            mpd._sock.close()
+            mpd._sock = None
 
     def test_title_first_then_artwork(self):
         self.mpd.set_scenario('mp3_mad')  # no artwork in mpd
         search = mock.Mock(return_value=[album('Alb', 'Art', 'alb')])
-        with mock.patch.object(bridge, 'itunes_search', search):
-            first = bridge.get_status()
+        with mock.patch.object(artwork, 'itunes_search', search):
+            first = status.get_status()
             self.assertEqual((first['title'], first['art_url']), ('Song MP3', ''))  # not held up
             wait_until(lambda: self.published.called)
-            self.assertEqual(bridge.get_status()['art_url'], 'https://is1.example/alb/600x600bb.jpg')
+            self.assertEqual(status.get_status()['art_url'], 'https://is1.example/alb/600x600bb.jpg')
         search.assert_called_once_with('Art Alb', 'album')
 
     def test_mpd_artwork_first(self):
         search = mock.Mock(return_value=[])
-        with mock.patch.object(bridge, 'itunes_search', search):
-            self.assertTrue(bridge.get_status()['art_url'].startswith('/art?file='))
+        with mock.patch.object(artwork, 'itunes_search', search):
+            self.assertTrue(status.get_status()['art_url'].startswith('/art?file='))
         search.assert_not_called()
 
 
@@ -488,10 +482,6 @@ class EventsTest(BridgeTestCase):
         self.assertEqual((status, data['error']), (500, 'internal'))
         self.mpd.set_scenario('mp3_mad')  # the watcher must still be there
         self.assertEqual(read_event(response)['title'], 'Song MP3')
-
-
-sys.path.insert(0, ROOT)
-import demo  # noqa: E402
 
 
 class DemoTest(unittest.TestCase):
@@ -661,12 +651,12 @@ class DisplaySettingsTest(BridgeTestCase):
             conn.close()
 
     def test_values(self):
-        self.assertEqual(bridge.valid_display(self.SETTINGS), self.SETTINGS)
-        self.assertEqual(bridge.valid_display({'scale': '3'}), {'scale': '3.0'})
-        self.assertEqual(bridge.valid_display({'scale': ''}), {'scale': ''})  # fits the screen
+        self.assertEqual(display.valid(self.SETTINGS), self.SETTINGS)
+        self.assertEqual(display.valid({'scale': '3'}), {'scale': '3.0'})
+        self.assertEqual(display.valid({'scale': ''}), {'scale': ''})  # fits the screen
         for wrong in ({'clock': '13'}, {'scale': '9'}, {'scale': 'nan'}, {'color': 'red'}, {'next': 0}, ['clock']):
             with self.subTest(wrong=wrong):
-                self.assertIsNone(bridge.valid_display(wrong))
+                self.assertIsNone(display.valid(wrong))
 
     def test_saved_then_pushed_to_the_screens(self):
         b = self.start_bridge()
@@ -830,8 +820,9 @@ class CheckSpotifyTest(unittest.TestCase):
             if conf is not None:
                 with open(path, 'w') as f:
                     f.write(conf)
-            with mock.patch.multiple(bridge, RASPOTIFY_CONF=path, DEMO=False, SPOTIFY_ENABLED=True):
-                bridge._check_spotify(lambda status, text, hint='': reports.append(status))
+            with mock.patch.object(check, 'RASPOTIFY_CONF', path), \
+                    mock.patch.multiple(config, DEMO=False, SPOTIFY_ENABLED=True):
+                check.check_spotify(lambda state, text, hint='': reports.append(state))
         return reports
 
     def test_raspotify_settings(self):

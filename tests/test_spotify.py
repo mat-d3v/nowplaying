@@ -8,7 +8,7 @@ import unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import spotify  # noqa: E402
+from nowplaying import spotify  # noqa: E402
 
 COVERS = ('https://i.scdn.co/image/ab67616d00004851aaaa\n'
           'https://i.scdn.co/image/ab67616d0000b273bbbb\n'

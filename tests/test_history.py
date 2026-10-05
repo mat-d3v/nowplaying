@@ -14,7 +14,7 @@ import urllib.parse
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import history  # noqa: E402
+from nowplaying import history  # noqa: E402
 
 STOP = {'state': 'stop', 'title': ''}
 ENTRY = {'at': 1700000000, 'title': 'Aerodynamic', 'artist': 'Daft Punk', 'album': 'Discovery', 'station': '',

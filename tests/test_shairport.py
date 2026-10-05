@@ -10,7 +10,7 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [HERE, os.path.dirname(HERE)]
 
-import shairport  # noqa: E402
+from nowplaying import shairport  # noqa: E402
 from fake_shairport import COVER, SCENARIOS, item, track  # noqa: E402
 
 

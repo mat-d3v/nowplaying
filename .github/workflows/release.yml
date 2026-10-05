@@ -1,6 +1,6 @@
 name: Release
 
-# Publishes a GitHub release for the version in mpd-bridge.py, with its
+# Publishes a GitHub release for the version in nowplaying/__init__.py, with its
 # section of CHANGELOG.md as the notes (first bump VERSION, and rename the
 # changelog's "Unreleased" section to that version), then the Docker image
 # on ghcr.io, for PCs and Raspberry Pis. Either push the tag:
@@ -28,7 +28,7 @@ jobs:
             exit 1
           fi
           if [ "$GITHUB_REF_TYPE" != tag ] && gh release view "v$version" >/dev/null 2>&1; then
-            echo "::error::v$version is already released: first bump VERSION in mpd-bridge.py, and rename the changelog's \"Unreleased\" section to the new version"
+            echo "::error::v$version is already released: first bump VERSION in nowplaying/__init__.py, and rename the changelog's \"Unreleased\" section to the new version"
             exit 1
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"

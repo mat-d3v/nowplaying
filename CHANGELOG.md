@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- The bridge's code is split into modules, in the `nowplaying` folder next to `mpd-bridge.py`, which still starts it: same commands, same settings. An install that copies files by hand needs that folder too (`git pull` brings it).
+
 ## 1.1.1 - 2026-10-05
 
 ### Fixed
