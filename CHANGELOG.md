@@ -1,10 +1,11 @@
 # Changelog
 
-## Unreleased
+## 1.1.1 - 2026-10-05
 
 ### Fixed
 
-- Qobuz and other streaming services through a UPnP controller: their FLAC badge and Hi-Res logo also show when the address gives the format in its parameters (`?format=flac`, `?file=01.flac`, Qobuz's own `fmt=27`). And an address that doesn't say at all, but plays integer samples at 88.2 kHz or more (only lossless files give those), gets its bit depth and the Hi-Res logo, without a codec badge.
+- Qobuz and other streaming services through a UPnP controller: their FLAC badge and Hi-Res logo also show when the address gives the format in its parameters (`?format=flac`, `?file=01.flac`, Qobuz's own `fmt=27`) or as its last part (`.../flac`). And an address that doesn't say at all, but plays integer samples at 88.2 kHz or more (only lossless files give those), gets its bit depth and the Hi-Res logo, without a codec badge.
+- Over HTTPS, answers could reach some clients cut short (Python 3.7's, as on Raspberry Pi OS Buster): every answer now gives its length. The bridge's tests also run on Python 3.7 and 3.9.
 
 ## 1.1.0 - 2026-10-03
 

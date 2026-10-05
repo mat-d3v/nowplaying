@@ -17,6 +17,20 @@ jobs:
       - name: Check docker-compose.yml
         run: docker compose config --quiet
 
+  old-python:
+    name: Bridge tests on Python ${{ matrix.python }}
+    # The oldest Python of the Raspberry Pi OS still around: 3.7 (Buster)
+    # and 3.9 (Bullseye)
+    strategy:
+      matrix:
+        python: ['3.7', '3.9']
+    runs-on: ubuntu-latest
+    container: python:${{ matrix.python }}-slim
+    steps:
+      - uses: actions/checkout@v7
+      - name: Bridge tests
+        run: python3 -m unittest discover -s tests -v
+
   page:
     name: Page tests in Chromium
     # Playwright 1.56 installs Chromium's system libraries for Ubuntu 24.04:

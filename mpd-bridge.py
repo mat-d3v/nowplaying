@@ -3,7 +3,7 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import socket, json, urllib.request, urllib.parse, re, os, threading, logging, queue, time, ssl, sys, stat
 import ipaddress, unicodedata
 
-VERSION = '1.1.0'  # with a matching section in CHANGELOG.md
+VERSION = '1.1.1'  # with a matching section in CHANGELOG.md
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def _load_dotenv(path):
@@ -723,12 +723,22 @@ STATIC_FILES = {
 }
 
 class Handler(BaseHTTPRequestHandler):
-    def send_json(self, data, code=200):
+    def send(self, code, data=b'', content_type=None, **headers):
+        # A whole answer, with its length: the client knows where it ends
+        # without waiting for the connection to close (over HTTPS, Python
+        # 3.7 clients took a close without TLS's goodbye for a cut-off)
         self.send_response(code)
-        self.send_header('Content-Type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')
+        if content_type:
+            self.send_header('Content-Type', content_type)
+        for name, value in headers.items():
+            self.send_header(name.replace('_', '-'), value)
+        if code != 204:  # "No Content" has no length at all
+            self.send_header('Content-Length', str(len(data)))
         self.end_headers()
-        self.wfile.write(json.dumps(data).encode())
+        self.wfile.write(data)
+
+    def send_json(self, data, code=200):
+        self.send(code, json.dumps(data).encode(), 'application/json', Access_Control_Allow_Origin='*')
 
     def stream_events(self, with_levels):
         # Server-sent events: the current status, then every change; with
@@ -788,15 +798,10 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 data, mime = get_mpd_art(uri) if uri else (None, '')
             if data:
-                self.send_response(200)
-                self.send_header('Content-Type', mime or 'image/jpeg')
-                self.send_header('Cache-Control', 'max-age=3600')
-                self.send_header('Access-Control-Allow-Origin', '*')
-                self.end_headers()
-                self.wfile.write(data)
+                self.send(200, data, mime or 'image/jpeg', Cache_Control='max-age=3600',
+                          Access_Control_Allow_Origin='*')
             else:
-                self.send_response(404)
-                self.end_headers()
+                self.send(404)
         elif url.path == '/display':
             self.send_json(load_display())
         elif url.path == '/history.json':
@@ -809,23 +814,19 @@ class Handler(BaseHTTPRequestHandler):
                 with open(filepath, 'rb') as f:
                     data = f.read()
             except OSError:
-                self.send_response(404)
-                self.end_headers()
+                self.send(404)
                 return
             if filename == 'index.html':
                 # The saved display settings, in the page itself: they apply
                 # from the start (<, written \u003c, can't end the script)
                 saved = json.dumps(load_display()).replace('<', '\\u003c')
                 data = data.replace(b'/*display-settings*/null', saved.encode(), 1)
-            self.send_response(200)
-            self.send_header('Content-Type', content_type)
             if content_type.startswith('text/html'):
-                self.send_header('Cache-Control', 'no-cache')
-            self.end_headers()
-            self.wfile.write(data)
+                self.send(200, data, content_type, Cache_Control='no-cache')
+            else:
+                self.send(200, data, content_type)
         else:
-            self.send_response(404)
-            self.end_headers()
+            self.send(404)
 
     def do_POST(self):
         url = urllib.parse.urlparse(self.path)
@@ -834,8 +835,7 @@ class Handler(BaseHTTPRequestHandler):
         elif url.path == '/display' and SETTINGS_PAGE:
             self.save_display()
         else:
-            self.send_response(404)
-            self.end_headers()
+            self.send(404)
 
     def read_json(self):
         # The JSON body of a request, None if there's none or it's not JSON
@@ -869,8 +869,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         log.info('display settings saved: %s', settings)
         events.publish(('settings', settings))  # the screens reload with them
-        self.send_response(204)
-        self.end_headers()
+        self.send(204)
 
     def spotify_event(self):
         # An event from librespot, posted by spotify-event.py. Only from this
@@ -889,8 +888,7 @@ class Handler(BaseHTTPRequestHandler):
             _spotify_seen = True
         if SPOTIFY.handle(event):
             publish_status()
-        self.send_response(204)
-        self.end_headers()
+        self.send(204)
 
     def log_message(self, *args): pass
 
