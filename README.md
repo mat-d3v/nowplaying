@@ -50,6 +50,16 @@ No nginx and no Python packages required - the bridge only uses the standard lib
 - Upright screens (a TV on its side, the Raspberry Pi Touch Display 2, phones): artwork on top, text below
 - Full-screen app from the home screen (on Android, this needs HTTPS or localhost), with Screen Wake Lock to keep the screen on (HTTPS or localhost too, see [below](#https-keeping-the-screen-on-and-installing-the-app))
 
+<p align="center">
+  <img src="assets/screenshots/vu.jpg" width="800" alt="The page with its VU meters">
+</p>
+<p align="center">
+  <img src="assets/screenshots/upright.jpg" width="250" alt="On an upright screen">
+  <img src="assets/screenshots/settings.jpg" width="250" alt="The settings page, on a phone">
+  <img src="assets/screenshots/history.jpg" width="250" alt="The listening history, on a phone">
+</p>
+<p align="center"><sub>VU meters; an upright screen; the settings page and the listening history, on a phone (demo mode)</sub></p>
+
 ## Requirements
 
 - MPD
@@ -303,7 +313,7 @@ npm install --no-save playwright && npx playwright install chromium
 node tests/ui_test.js                       # the page, in Chromium
 ```
 
-GitHub Actions runs both on every push, with `shellcheck` on `install.sh`, and builds and tries the Docker image.
+GitHub Actions runs both on every push, with `shellcheck` on `install.sh`, and builds and tries the Docker image. `node tests/screenshots.js` retakes the screenshots above, in English and French, from the demo mode.
 
 ## License
 

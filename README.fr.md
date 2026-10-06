@@ -50,6 +50,16 @@ Ni nginx ni paquet Python à installer - le pont n'utilise que la bibliothèque 
 - Écrans verticaux (une TV posée sur le côté, le Raspberry Pi Touch Display 2, les téléphones) : pochette en haut, texte en dessous
 - Appli plein écran depuis l'écran d'accueil (sur Android, il faut HTTPS ou localhost), avec Wake Lock pour garder l'écran allumé (HTTPS ou localhost aussi, voir plus bas)
 
+<p align="center">
+  <img src="assets/screenshots/vu.fr.jpg" width="800" alt="La page avec ses VU-mètres">
+</p>
+<p align="center">
+  <img src="assets/screenshots/upright.fr.jpg" width="250" alt="Sur un écran vertical">
+  <img src="assets/screenshots/settings.fr.jpg" width="250" alt="La page de réglages, sur un téléphone">
+  <img src="assets/screenshots/history.fr.jpg" width="250" alt="L'historique d'écoute, sur un téléphone">
+</p>
+<p align="center"><sub>VU-mètres ; un écran vertical ; la page de réglages et l'historique d'écoute, sur un téléphone (mode démo)</sub></p>
+
 ## Prérequis
 
 - MPD
@@ -303,7 +313,7 @@ npm install --no-save playwright && npx playwright install chromium
 node tests/ui_test.js                       # la page, dans Chromium
 ```
 
-GitHub Actions lance les deux à chaque push, avec `shellcheck` sur `install.sh`, et construit puis essaie l'image Docker.
+GitHub Actions lance les deux à chaque push, avec `shellcheck` sur `install.sh`, et construit puis essaie l'image Docker. `node tests/screenshots.js` reprend les captures ci-dessus, en anglais et en français, depuis le mode démo.
 
 ## Licence
 

@@ -11,5 +11,6 @@ tests
 __pycache__
 *.pyc
 screenshot*.jpg
+assets/screenshots
 assets/nowplaying-presentation.mp4
 assets/presentation-poster.jpg

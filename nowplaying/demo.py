@@ -64,6 +64,24 @@ def until_next_track(now=None):
     return STEP - _position(now)[1]
 
 
+# What /history shows in the demo mode: (hours ago, track, player)
+PLAYED = [(27.5, 4, 'mpd'), (26.4, 2, 'airplay'), (25.6, 1, 'spotify'), (4.2, 0, 'mpd'), (3.5, 4, 'bluetooth'),
+          (2.1, 3, 'mpd'), (1.2, 2, 'mpd'), (0.4, 1, 'airplay')]
+
+
+def history(now=None):
+    # A made-up listening history, the latest last, like history.Listening's
+    now = time.time() if now is None else now
+    plays = []
+    for hours, index, source in PLAYED:
+        track = TRACKS[index]
+        plays.append({'at': int(now - hours * 3600), 'title': track['title'], 'artist': track['artist'],
+                      'album': track['album'], 'source': source,
+                      'station': track['album'] if track.get('stream') else '',
+                      'duration': round(track['duration']), 'art': f'/art?demo={index}'})
+    return plays
+
+
 _artwork = {}
 
 

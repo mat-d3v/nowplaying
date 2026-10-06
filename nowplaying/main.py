@@ -6,7 +6,7 @@ import ssl
 import sys
 import threading
 
-from . import VERSION, bluetooth, check, config, history, levels, mqtt, shairport, spotify, status, updates
+from . import VERSION, bluetooth, check, config, demo, history, levels, mqtt, shairport, spotify, status, updates
 from .server import Handler, Server
 
 log = logging.getLogger('nowplaying')
@@ -45,6 +45,8 @@ def main():
         status.LISTENING = history.Listening(
             status.history_file() if config.HISTORY_ENABLED and not config.DEMO else None,
             history.Scrobbler(services, log) if services else None, config.SCROBBLE_SOURCES, log)
+        if config.DEMO:
+            status.LISTENING.entries.extend(demo.history())  # something to show on /history
         log.info('listening history %s, scrobbling %s',
                  ('off' if not config.HISTORY_ENABLED else 'in memory (demo mode)' if config.DEMO
                   else f'in {status.history_file()}'),

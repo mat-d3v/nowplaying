@@ -572,6 +572,10 @@ class DemoTest(unittest.TestCase):
         self.assertIn(data['title'], titles)
         status, headers, body = b.get(data['art_url'])
         self.assertEqual((status, headers['Content-Type'], body[:8]), (200, 'image/png', b'\x89PNG\r\n\x1a\n'))
+        # A made-up history too, the latest first
+        played = json.loads(b.get('/history.json')[2])['tracks']
+        self.assertEqual([t['title'] for t in played], [demo.TRACKS[i]['title'] for _, i, _ in demo.PLAYED[::-1]])
+        self.assertEqual({t['source'] for t in played}, {'mpd', 'airplay', 'spotify', 'bluetooth'})
         conn = http.client.HTTPConnection('127.0.0.1', b.port, timeout=5)
         self.addCleanup(conn.close)
         conn.request('GET', '/events')
