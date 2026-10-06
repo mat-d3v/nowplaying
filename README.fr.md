@@ -42,7 +42,7 @@ Ni nginx ni paquet Python à installer - le pont n'utilise que la bibliothèque 
 - Horloge en haut à droite
 - Ligne « À suivre » avec le prochain morceau de la file
 - Messages clairs quand mpd est injoignable ou demande un mot de passe, et indicateur « hors ligne » si le pont ne répond plus
-- Anglais et français, selon la langue du navigateur
+- Anglais, français, allemand, espagnol, italien et néerlandais, selon la langue du navigateur
 - Historique d'écoute : ce qui a été joué, par jour, quel que soit le lecteur ; envoi à ListenBrainz ou Last.fm (scrobbling) en option
 - Home Assistant : ce qui joue, sa qualité et sa pochette, via MQTT ; les entités apparaissent d'elles-mêmes
 - Une page de réglages pour votre téléphone : langue, horloge, fond, taille, VU-mètres... avec un aperçu ; enregistrés, tous les écrans les affichent aussitôt
@@ -67,7 +67,7 @@ python3 mpd-bridge.py
 
 Ouvrez ensuite http://localhost:8766 dans un navigateur, ou `http://<ip-de-la-machine>:8766` depuis un téléphone ou une tablette.
 
-La page suit la langue du navigateur (anglais ou français). Pour en forcer une : http://localhost:8766/?lang=fr ou `?lang=en` (http://localhost:8766/index.fr.html fonctionne toujours).
+La page suit la langue du navigateur : anglais, français, allemand, espagnol, italien ou néerlandais. Pour en forcer une : http://localhost:8766/?lang=fr (ou `en`, `de`, `es`, `it`, `nl` ; http://localhost:8766/index.fr.html fonctionne toujours).
 
 ## Essayer sans mpd
 
@@ -93,7 +93,7 @@ Un écran peut aussi avoir les siennes, dans son adresse, combinées avec `&` - 
 
 | Option | Effet |
 |--------|-------|
-| `lang=fr`, `lang=en` | Force la langue |
+| `lang=fr`, `lang=en`... | Force la langue : `en`, `fr`, `de`, `es`, `it` ou `nl` |
 | `clock=0` | Masque l'horloge |
 | `clock=12` | Horloge sur 12 heures |
 | `next=0` | Masque la ligne « À suivre » |

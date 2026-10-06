@@ -42,7 +42,7 @@ No nginx and no Python packages required - the bridge only uses the standard lib
 - Clock in the top right corner
 - "Up next" line showing the next track in the queue
 - Clear messages when mpd is unreachable or needs a password, and an offline indicator when the bridge stops responding
-- English and French, following the browser's language
+- English, French, German, Spanish, Italian and Dutch, following the browser's language
 - Listening history: what played, by day, whatever the player; scrobbling to ListenBrainz or Last.fm, as an option
 - Home Assistant: what's playing, its quality and its artwork, over MQTT; the entities show up by themselves
 - A settings page for your phone: language, clock, background, size, VU meters... with a preview; saved, every screen shows them at once
@@ -67,7 +67,7 @@ python3 mpd-bridge.py
 
 Then open http://localhost:8766 in a browser, or `http://<machine-ip>:8766` from a phone or tablet.
 
-The page follows the browser's language (English or French). To force one: http://localhost:8766/?lang=fr or `?lang=en` (http://localhost:8766/index.fr.html still works too).
+The page follows the browser's language: English, French, German, Spanish, Italian or Dutch. To force one: http://localhost:8766/?lang=fr (or `en`, `de`, `es`, `it`, `nl`; http://localhost:8766/index.fr.html still works too).
 
 ## Try it without mpd
 
@@ -93,7 +93,7 @@ A screen can also have its own, in its address, combined with `&` - for example 
 
 | Option | Effect |
 |--------|--------|
-| `lang=fr`, `lang=en` | Force the language |
+| `lang=fr`, `lang=en`... | Force the language: `en`, `fr`, `de`, `es`, `it` or `nl` |
 | `clock=0` | Hide the clock |
 | `clock=12` | 12-hour clock |
 | `next=0` | Hide the "Up next" line |

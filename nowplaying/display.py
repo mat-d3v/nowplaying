@@ -8,7 +8,7 @@ import os
 
 from . import config
 
-CHOICES = {'lang': ('', 'en', 'fr'), 'clock': ('24', '12', '0'), 'bg': ('glow', 'blur'),
+CHOICES = {'lang': ('', 'en', 'fr', 'de', 'es', 'it', 'nl'), 'clock': ('24', '12', '0'), 'bg': ('glow', 'blur'),
            'next': ('1', '0'), 'vu': ('0', '1'), 'shift': ('1', '0')}
 
 

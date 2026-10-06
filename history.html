@@ -105,8 +105,34 @@
       empty: "Rien pour l'instant : les morceaux s'affichent ici une fois écoutés un moment.",
       off: "L'historique d'écoute est désactivé (HISTORY=0).",
     },
+    de: {
+      title: 'Verlauf', screen: 'Bildschirm', settings: 'Einstellungen', playing: 'Wiedergabe', paused: 'Pausiert',
+      today: 'Heute', yesterday: 'Gestern', radio: 'Radio',
+      empty: 'Noch nichts: Titel erscheinen hier, sobald sie eine Weile gelaufen sind.',
+      off: 'Der Hörverlauf ist ausgeschaltet (HISTORY=0).',
+    },
+    es: {
+      title: 'Historial', screen: 'Pantalla', settings: 'Ajustes', playing: 'Reproduciendo', paused: 'En pausa',
+      today: 'Hoy', yesterday: 'Ayer', radio: 'Radio',
+      empty: 'Nada por ahora: las canciones aparecen aquí cuando han sonado un rato.',
+      off: 'El historial de escucha está desactivado (HISTORY=0).',
+    },
+    it: {
+      title: 'Cronologia', screen: 'Schermo', settings: 'Impostazioni', playing: 'In riproduzione', paused: 'In pausa',
+      today: 'Oggi', yesterday: 'Ieri', radio: 'Radio',
+      empty: 'Ancora niente: i brani compaiono qui dopo essere stati ascoltati per un po’.',
+      off: 'La cronologia di ascolto è disattivata (HISTORY=0).',
+    },
+    nl: {
+      title: 'Geschiedenis', screen: 'Scherm', settings: 'Instellingen', playing: 'Speelt af', paused: 'Gepauzeerd',
+      today: 'Vandaag', yesterday: 'Gisteren', radio: 'Radio',
+      empty: 'Nog niets: nummers verschijnen hier zodra ze een tijdje hebben gespeeld.',
+      off: 'De luistergeschiedenis staat uit (HISTORY=0).',
+    },
   };
-  const LANG = (navigator.language || '').toLowerCase().indexOf('fr') === 0 ? 'fr' : 'en';
+  // The first of the browser's languages the page speaks, else English
+  const LANG = (navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || ''])
+    .map(tag => tag.toLowerCase().split('-')[0]).find(code => Object.prototype.hasOwnProperty.call(STRINGS, code)) || 'en';
   const T = STRINGS[LANG];
   document.documentElement.lang = LANG;
   document.title = 'Now Playing - ' + T.title;

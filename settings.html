@@ -51,6 +51,12 @@
     }
     .choices button[aria-pressed="true"] { background: rgba(255,255,255,0.9); color: #0a0a0a; font-weight: 600; }
 
+    select {
+      font: inherit; font-size: 15px; color: rgba(255,255,255,0.9); background: rgba(255,255,255,0.07);
+      border: 0; border-radius: 10px; padding: 9px 12px; flex-shrink: 0; cursor: pointer;
+    }
+    select option { color: #0a0a0a; background: #fff; }
+
     .switch { position: relative; width: 51px; height: 31px; flex-shrink: 0; }
     .switch input { opacity: 0; width: 100%; height: 100%; margin: 0; position: absolute; cursor: pointer; z-index: 1; }
     .switch span {
@@ -110,12 +116,16 @@
 
   <section>
     <div class="row">
-      <span class="label" data-i18n="language">Language</span>
-      <div class="choices" data-setting="lang">
-        <button type="button" data-value="" data-i18n="auto">Auto</button>
-        <button type="button" data-value="en">English</button>
-        <button type="button" data-value="fr">Français</button>
-      </div>
+      <label class="label" for="lang" data-i18n="language">Language</label>
+      <select id="lang" data-setting="lang">
+        <option value="" data-i18n="auto">Auto</option>
+        <option value="en">English</option>
+        <option value="fr">Français</option>
+        <option value="de">Deutsch</option>
+        <option value="es">Español</option>
+        <option value="it">Italiano</option>
+        <option value="nl">Nederlands</option>
+      </select>
     </div>
     <div class="row">
       <span class="label" data-i18n="clock">Clock</span>
@@ -193,8 +203,54 @@
       address: 'Ou, pour un seul écran, ces options dans son adresse :',
       history: "Historique d'écoute", screen: 'Écran', update: 'la version {version} est sortie',
     },
+    de: {
+      title: 'Anzeige-Einstellungen', lead: 'Für alle Bildschirme mit dieser Seite. Gespeichert, gelten sie sofort.',
+      landscape: 'Quer', upright: 'Hoch', language: 'Sprache', auto: 'Automatisch', clock: 'Uhr',
+      hidden: 'Ausgeblendet', background: 'Hintergrund', colors: 'Farben', blurred: 'Unscharfes Cover',
+      upNext: 'Zeile „Als Nächstes“', vu: 'VU-Meter', vuHint: 'Benötigt den „fifo“-Ausgang von mpd (siehe README)',
+      shift: 'Einbrennschutz', shiftHint: 'Verschiebt alles alle 3 Minuten um ein paar Pixel (OLED-Bildschirme)',
+      size: 'An den Bildschirm anpassen', sizeHint: 'Sonst die unten eingestellte Größe', reset: 'Standard', save: 'Speichern',
+      saved: 'Gespeichert: die Bildschirme zeigen es jetzt', failed: 'Nicht gespeichert: ',
+      address: 'Oder, nur für einen Bildschirm, diese Optionen in seiner Adresse:',
+      history: 'Hörverlauf', screen: 'Bildschirm', update: 'Version {version} ist erschienen',
+    },
+    es: {
+      title: 'Ajustes de pantalla', lead: 'Para todas las pantallas que muestran esta página. Guardados, se aplican al instante.',
+      landscape: 'Horizontal', upright: 'Vertical', language: 'Idioma', auto: 'Auto', clock: 'Reloj',
+      hidden: 'Oculto', background: 'Fondo', colors: 'Colores', blurred: 'Carátula difuminada',
+      upNext: 'Línea «A continuación»', vu: 'Vúmetros', vuHint: 'Necesitan la salida «fifo» de mpd (ver el README)',
+      shift: 'Protección contra marcas', shiftHint: 'Desplaza todo unos píxeles cada 3 minutos (pantallas OLED)',
+      size: 'Ajustar a la pantalla', sizeHint: 'Si no, el tamaño elegido abajo', reset: 'Por defecto', save: 'Guardar',
+      saved: 'Guardado: las pantallas ya lo muestran', failed: 'No guardado: ',
+      address: 'O, solo para una pantalla, estas opciones en su dirección:',
+      history: 'Historial de escucha', screen: 'Pantalla', update: 'ya está disponible la versión {version}',
+    },
+    it: {
+      title: 'Impostazioni dello schermo', lead: 'Per tutti gli schermi che mostrano questa pagina. Salvate, valgono subito.',
+      landscape: 'Orizzontale', upright: 'Verticale', language: 'Lingua', auto: 'Auto', clock: 'Orologio',
+      hidden: 'Nascosto', background: 'Sfondo', colors: 'Colori', blurred: 'Copertina sfocata',
+      upNext: 'Riga «A seguire»', vu: 'VU meter', vuHint: "Serve l'uscita «fifo» di mpd (vedi il README)",
+      shift: 'Protezione burn-in', shiftHint: 'Sposta tutto di qualche pixel ogni 3 minuti (schermi OLED)',
+      size: 'Adatta allo schermo', sizeHint: 'Altrimenti, la dimensione scelta qui sotto', reset: 'Predefinite', save: 'Salva',
+      saved: 'Salvate: gli schermi le mostrano ora', failed: 'Non salvate: ',
+      address: 'Oppure, per un solo schermo, queste opzioni nel suo indirizzo:',
+      history: 'Cronologia di ascolto', screen: 'Schermo', update: 'è uscita la versione {version}',
+    },
+    nl: {
+      title: 'Weergave-instellingen', lead: 'Voor alle schermen met deze pagina. Opgeslagen gelden ze meteen.',
+      landscape: 'Liggend', upright: 'Staand', language: 'Taal', auto: 'Auto', clock: 'Klok',
+      hidden: 'Verborgen', background: 'Achtergrond', colors: 'Kleuren', blurred: 'Vervaagde hoes',
+      upNext: 'Regel „Hierna”', vu: 'VU-meters', vuHint: 'Vereist de „fifo”-uitgang van mpd (zie de README)',
+      shift: 'Inbrandbeveiliging', shiftHint: 'Verschuift alles elke 3 minuten een paar pixels (OLED-schermen)',
+      size: 'Aan het scherm aanpassen', sizeHint: 'Anders de grootte hieronder', reset: 'Standaard', save: 'Opslaan',
+      saved: 'Opgeslagen: de schermen tonen het nu', failed: 'Niet opgeslagen: ',
+      address: 'Of, voor één scherm, deze opties in het adres:',
+      history: 'Luistergeschiedenis', screen: 'Scherm', update: 'versie {version} is uit',
+    },
   };
-  const LANG = (navigator.language || '').toLowerCase().indexOf('fr') === 0 ? 'fr' : 'en';
+  // The first of the browser's languages the page speaks, else English
+  const LANG = (navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || ''])
+    .map(tag => tag.toLowerCase().split('-')[0]).find(code => Object.prototype.hasOwnProperty.call(STRINGS, code)) || 'en';
   const T = STRINGS[LANG];
   document.documentElement.lang = LANG;
   document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = T[el.dataset.i18n]; });
@@ -212,6 +268,9 @@
     });
     document.querySelectorAll('input[type="checkbox"][data-setting]').forEach(input => {
       input.checked = settings[input.dataset.setting] === '1';
+    });
+    document.querySelectorAll('select[data-setting]').forEach(select => {
+      select.value = settings[select.dataset.setting];
     });
     const fit = settings.scale === '';
     document.getElementById('auto-size').checked = fit;
@@ -275,6 +334,11 @@
   }));
   document.querySelectorAll('input[type="checkbox"][data-setting]').forEach(input => input.addEventListener('change', () => {
     settings[input.dataset.setting] = input.checked ? '1' : '0';
+    setMessage('');
+    show();
+  }));
+  document.querySelectorAll('select[data-setting]').forEach(select => select.addEventListener('change', () => {
+    settings[select.dataset.setting] = select.value;
     setMessage('');
     show();
   }));

@@ -465,8 +465,8 @@
       : Object.prototype.hasOwnProperty.call(SAVED, name) ? SAVED[name] : null,
   };
 
-  // One page for both languages: ?lang=fr|en, /index.fr.html, otherwise the
-  // browser's own language
+  // One page for every language: ?lang=fr (en, de, es, it, nl),
+  // /index.fr.html, otherwise the first of the browser's languages it speaks
   const STRINGS = {
     en: {
       offline: 'Offline', noArtwork: 'No artwork', waiting: 'Waiting', upNext: 'Up next',
@@ -484,13 +484,46 @@
       mpd_password: 'MPD demande un mot de passe', mpd_passwordHint: 'Renseignez MPD_PASSWORD dans .env (ou vérifiez-le)',
       mpd_error: 'Erreur MPD',
     },
+    de: {
+      offline: 'Offline', noArtwork: 'Kein Cover', waiting: 'Warten', upNext: 'Als Nächstes',
+      nothing: 'Keine Wiedergabe', waitingPlayback: 'Warten auf Wiedergabe...',
+      playing: 'Wiedergabe', paused: 'Pausiert', live: 'Live',
+      mpd_unreachable: 'MPD nicht erreichbar', mpd_unreachableHint: 'Prüfen Sie, ob mpd läuft, sowie MPD_HOST / MPD_PORT',
+      mpd_password: 'MPD verlangt ein Passwort', mpd_passwordHint: 'MPD_PASSWORD in .env eintragen (oder prüfen)',
+      mpd_error: 'MPD-Fehler',
+    },
+    es: {
+      offline: 'Sin conexión', noArtwork: 'Sin carátula', waiting: 'En espera', upNext: 'A continuación',
+      nothing: 'Nada en reproducción', waitingPlayback: 'Esperando la reproducción...',
+      playing: 'Reproduciendo', paused: 'En pausa', live: 'En directo',
+      mpd_unreachable: 'MPD inaccesible', mpd_unreachableHint: 'Comprueba que mpd está en marcha, y MPD_HOST / MPD_PORT',
+      mpd_password: 'MPD pide una contraseña', mpd_passwordHint: 'Indica MPD_PASSWORD en .env (o compruébala)',
+      mpd_error: 'Error de MPD',
+    },
+    it: {
+      offline: 'Offline', noArtwork: 'Nessuna copertina', waiting: 'In attesa', upNext: 'A seguire',
+      nothing: 'Nessuna riproduzione', waitingPlayback: 'In attesa di riproduzione...',
+      playing: 'In riproduzione', paused: 'In pausa', live: 'In diretta',
+      mpd_unreachable: 'MPD non raggiungibile', mpd_unreachableHint: 'Verifica che mpd sia in esecuzione, e MPD_HOST / MPD_PORT',
+      mpd_password: 'MPD richiede una password', mpd_passwordHint: 'Imposta MPD_PASSWORD in .env (o verificala)',
+      mpd_error: 'Errore MPD',
+    },
+    nl: {
+      offline: 'Offline', noArtwork: 'Geen hoes', waiting: 'Wachten', upNext: 'Hierna',
+      nothing: 'Er speelt niets', waitingPlayback: 'Wachten op afspelen...',
+      playing: 'Speelt af', paused: 'Gepauzeerd', live: 'Live',
+      mpd_unreachable: 'MPD onbereikbaar', mpd_unreachableHint: 'Controleer of mpd draait, en MPD_HOST / MPD_PORT',
+      mpd_password: 'MPD vraagt een wachtwoord', mpd_passwordHint: 'Vul MPD_PASSWORD in .env in (of controleer het)',
+      mpd_error: 'MPD-fout',
+    },
   };
   const LANG = (function () {
+    const speaks = code => Object.prototype.hasOwnProperty.call(STRINGS, code);
     const q = OPTIONS.get('lang');
-    if (q && Object.prototype.hasOwnProperty.call(STRINGS, q)) return q;
+    if (q && speaks(q)) return q;
     if (/\/index\.fr\.html$/.test(location.pathname)) return 'fr';
-    const nav = (navigator.languages && navigator.languages[0]) || navigator.language || '';
-    return nav.toLowerCase().indexOf('fr') === 0 ? 'fr' : 'en';
+    const wanted = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || ''];
+    return wanted.map(tag => tag.toLowerCase().split('-')[0]).find(speaks) || 'en';
   })();
   const T = STRINGS[LANG];
   document.documentElement.lang = LANG;

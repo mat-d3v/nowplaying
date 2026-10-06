@@ -176,6 +176,26 @@ async function waitFor(fn, expected, timeout = 5000) {
     await fr.goto(BASE + '/?lang=en');
     await sleep(800);
     check('?lang=en wins over the browser', await fr.evaluate(() => document.documentElement.lang), 'en');
+    await fr.goto(BASE + '/?lang=nl');
+    await sleep(800);
+    check('?lang=nl: Dutch', await fr.evaluate(() => document.getElementById('nothing-title').textContent),
+      'Er speelt niets');
+    // The first of the browser's languages the page speaks
+    const de = await browser.newPage({ locale: 'de-AT' });
+    await de.goto(BASE + '/');
+    await sleep(800);
+    check('German from the browser language', await de.evaluate(() =>
+      [document.documentElement.lang, document.getElementById('nothing-title').textContent]),
+    ['de', 'Keine Wiedergabe']);
+    await de.goto(BASE + '/settings');
+    check('settings page in German', await de.evaluate(() => document.querySelector('h1').textContent),
+      'Anzeige-Einstellungen');
+    await de.selectOption('#lang', 'es');
+    check('a language picked for the screens: the preview speaks it', await waitFor(() => de.evaluate(() =>
+      document.getElementById('preview').getAttribute('src').includes('lang=es')), true), true);
+    await de.goto(BASE + '/history');
+    check('history page in German', await de.evaluate(() => document.querySelector('h1').textContent), 'Verlauf');
+    await de.close();
 
     // Burn-in protection: one shift moves what's drawn by a few pixels
     await setScenario('flac_hires');

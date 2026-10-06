@@ -8,6 +8,7 @@
 - AirPlay: when the app playing gives no cover (some radio apps, some Android apps), the artwork is looked up online (iTunes, or Last.fm with a key), as for radios. The bridge first gives the cover 3 seconds to come, so no other artwork flashes by; when the sender says it has none, it looks at once.
 
 - Bluetooth: what a phone plays through the machine, set up as a Bluetooth speaker (BlueALSA, PulseAudio, PipeWire), shows up too: title, artist, album, progress, and the phone's name, with artwork from the Internet. The bridge asks BlueZ every few seconds with `busctl` (systemd's); headphones the machine plays to don't count. `--check` says what BlueZ answers, `BLUETOOTH=0` turns it off. Its plays are scrobbled by default, like AirPlay's.
+- German, Spanish, Italian and Dutch, besides English and French: the page, the settings page and the history speak the first of the browser's languages they know (`?lang=de` and so on still picks one).
 - Home Assistant, through MQTT: with `MQTT_HOST` set, the bridge publishes what's playing to the broker, and Home Assistant finds it by itself (discovery): title, artist, album, source, quality, state, a "Playing" sensor, and the artwork as an image. Other systems can read the same topics (`nowplaying/state` in JSON, `nowplaying/artwork`, `nowplaying/availability`). A small MQTT client of its own, so still no Python package to install; TLS and a user name and password as options. `--check` tries the broker.
 
 ### Changed
