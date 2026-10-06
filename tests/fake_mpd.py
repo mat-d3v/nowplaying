@@ -181,6 +181,16 @@ class _Handler(socketserver.StreamRequestHandler):
                    + chunk + b'\nOK\n')
 
     def _idle(self):
+        server = self.server
+        with server.changed:
+            server.idling += 1
+        try:
+            return self._wait_for_change()
+        finally:
+            with server.changed:
+                server.idling -= 1
+
+    def _wait_for_change(self):
         # Block until the scenario changes (mpd's "changed: player"), or
         # until the client sends "noidle"
         server = self.server
@@ -221,6 +231,7 @@ class FakeMPD(socketserver.ThreadingTCPServer):
         self.scenario = scenario
         self.version = 0
         self.changed = threading.Condition()
+        self.idling = 0  # clients waiting in "idle"
         self.commands = []
 
     @property

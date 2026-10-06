@@ -343,6 +343,11 @@ class BridgeTestCase(unittest.TestCase):
         self.addCleanup(b.stop)
         return b
 
+    def wait_for_idle(self):
+        # The bridge waits for mpd's changes: it told the pages what plays
+        # when it connected, and the next status it pushes is a change
+        wait_until(lambda: self.mpd.idling > 0)
+
 
 class StatusTest(BridgeTestCase):
     def test_payloads(self):
@@ -514,13 +519,13 @@ def read_event(response, wanted='message'):
 class EventsTest(BridgeTestCase):
     def test_changes_are_pushed(self):
         b = self.start_bridge()
+        self.wait_for_idle()
         conn = http.client.HTTPConnection('127.0.0.1', b.port, timeout=5)
         self.addCleanup(conn.close)
         conn.request('GET', '/events')
         response = conn.getresponse()
         self.assertEqual(response.getheader('Content-Type'), 'text/event-stream')
         self.assertEqual(read_event(response)['title'], 'Song')  # current status first
-        time.sleep(0.3)  # let the bridge enter mpd's idle mode
         start = time.time()
         self.mpd.set_scenario('mp3_mad')
         self.assertEqual(read_event(response)['title'], 'Song MP3')
@@ -528,12 +533,12 @@ class EventsTest(BridgeTestCase):
 
     def test_watcher_survives_errors(self):
         b = self.start_bridge()
+        self.wait_for_idle()
         conn = http.client.HTTPConnection('127.0.0.1', b.port, timeout=5)
         self.addCleanup(conn.close)
         conn.request('GET', '/events')
         response = conn.getresponse()
         self.assertEqual(read_event(response)['title'], 'Song')
-        time.sleep(0.3)
         self.mpd.set_scenario('bad_status')  # building the status fails
         time.sleep(0.3)
         status, data = b.now()
