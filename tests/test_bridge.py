@@ -929,14 +929,15 @@ class MqttBridgeTest(BridgeTestCase):
             'will': ('nowplaying/availability', 'offline'), 'will_retain': True})
         self.assertEqual(broker.retained['nowplaying/availability'], 'online')
         self.assertEqual(state()['quality'], 'FLAC · 24bit / 96.0 kHz · Hi-Res')
-        self.assertEqual(broker.retained['nowplaying/artwork'],
-                         'http://nowplaying.local:8766/art?file=Music%2FAlbum%2F01%20Song.flac')
+        # The artwork's address comes right after the state
+        artwork = lambda: broker.retained.get('nowplaying/artwork')  # noqa: E731
+        broker.wait_for(lambda: artwork() == 'http://nowplaying.local:8766/art?file=Music%2FAlbum%2F01%20Song.flac')
         title = json.loads(broker.retained['homeassistant/sensor/nowplaying/title/config'])
         self.assertEqual(title['device']['configuration_url'], 'http://nowplaying.local:8766/settings')
         # A change, pushed at once
         self.mpd.set_scenario('mp3_mad')
         broker.wait_for(lambda: state().get('title') == 'Song MP3')
-        self.assertEqual(broker.retained['nowplaying/artwork'], 'http://nowplaying.local:8766/icon-512.png')
+        broker.wait_for(lambda: artwork() == 'http://nowplaying.local:8766/icon-512.png')  # none: the app's icon
         # The bridge stops: the broker says it's gone
         b.stop()
         broker.wait_for(lambda: broker.retained['nowplaying/availability'] == 'offline')
