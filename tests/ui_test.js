@@ -15,6 +15,7 @@ const MPD_PORT = 16600, BRIDGE_PORT = 18766, BASE = `http://localhost:${BRIDGE_P
 const PIPE = path.join(os.tmpdir(), `nowplaying-airplay-${process.pid}`);  // shairport-sync's metadata pipe
 const FIFO = path.join(os.tmpdir(), `nowplaying-mpd-${process.pid}.fifo`);  // mpd's fifo output, for the VU meters
 const DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'nowplaying-data-'));    // what the bridge saves
+const BLUEZ = path.join(DATA, 'bluez.json');  // what the fake BlueZ says, through a fake busctl
 // A listening history, from yesterday and today
 const HOUR = 3600, NOW = Math.floor(Date.now() / 1000);
 const TODAY = new Date(); TODAY.setHours(0, 0, 0, 0);
@@ -53,6 +54,11 @@ function airplay(scenario) {
   execFileSync('python3', [path.join(ROOT, 'tests/fake_shairport.py'), '--pipe', PIPE, scenario]);
 }
 
+// What a phone plays over Bluetooth, as BlueZ says ("playing", "paused", "nothing")
+function bluetooth(scenario) {
+  execFileSync('python3', [path.join(ROOT, 'tests/fake_bluez.py'), BLUEZ, scenario]);
+}
+
 function start(script, args, env) {
   const proc = spawn('python3', [path.join(ROOT, script), ...args],
     { env: { ...process.env, ...env }, stdio: ['ignore', 'inherit', 'inherit'] });
@@ -74,11 +80,13 @@ async function waitFor(fn, expected, timeout = 5000) {
 (async () => {
   execFileSync('mkfifo', [PIPE]);
   execFileSync('mkfifo', [FIFO]);
+  execFileSync('python3', [path.join(ROOT, 'tests/fake_bluez.py'), 'install', DATA]);
+  bluetooth('nothing');
   const mpd = start('tests/fake_mpd.py', ['--port', String(MPD_PORT), '--scenario', 'flac_hires'], {});
   const bridge = start('mpd-bridge.py', [], {
     MPD_HOST: '127.0.0.1', MPD_PORT: String(MPD_PORT), PORT: String(BRIDGE_PORT), MPD_PASSWORD: '',
     LASTFM_API_KEY: '', ITUNES_ARTWORK: '0', TLS_CERT: '', TLS_KEY: '', SHAIRPORT_PIPE: PIPE, MPD_FIFO: FIFO,
-    DATA_DIR: DATA, UPDATE_CHECK: '0',
+    DATA_DIR: DATA, UPDATE_CHECK: '0', BLUETOOTH: '1', FAKE_BLUEZ: BLUEZ, PATH: DATA + path.delimiter + process.env.PATH,
   });
   const browser = await chromium.launch();
   try {
@@ -248,6 +256,15 @@ async function waitFor(fn, expected, timeout = 5000) {
     ['Spotify', 'Playing · Salon']);
     spotify({ PLAYER_EVENT: 'stopped' });
     check('mpd back when Spotify stops', await waitFor(title, 'Song', 3000), 'Song');
+
+    // Bluetooth: the bridge asks BlueZ every few seconds
+    bluetooth('playing');
+    check('Bluetooth shown over mpd', await waitFor(title, 'Harbor Lights', 8000), 'Harbor Lights');
+    check('Bluetooth: badge and sender', await page.evaluate(() => [
+      document.getElementById('badge-format').textContent, document.getElementById('status-text').textContent]),
+    ['Bluetooth', "Playing · Mat's iPhone"]);
+    bluetooth('nothing');
+    check('mpd back when Bluetooth stops', await waitFor(title, 'Song', 8000), 'Song');
 
     // Settings page, on a phone: saved, they show on the screens at once;
     // a screen's own address still wins

@@ -34,6 +34,7 @@ Ni nginx ni paquet Python à installer - le pont n'utilise que la bibliothèque 
 - Les fichiers sans tags affichent leur nom de fichier
 - AirPlay : ce qui est joué depuis un iPhone, un iPad ou un Mac via shairport-sync s'affiche aussi
 - Spotify Connect : ce qui est joué depuis l'appli Spotify via raspotify (librespot) s'affiche aussi
+- Bluetooth : ce qu'un téléphone joue à travers la machine, utilisée comme enceinte Bluetooth, s'affiche aussi
 - Mises à jour instantanées : le pont pousse chaque changement dès qu'il a lieu (morceau, pause, avance, file d'attente)
 - Barre de progression avec temps écoulé et total, interpolée en douceur
 - Défilement automatique pour les titres longs
@@ -117,11 +118,12 @@ Les réglages viennent des variables d'environnement ou d'un fichier `.env` plac
 | SHAIRPORT_PIPE | /tmp/shairport-sync-metadata | Tube de métadonnées de shairport-sync, pour AirPlay ; vide, AirPlay est coupé |
 | MPD_FIFO | /tmp/mpd.fifo | Sortie fifo de mpd, lue pour les VU-mètres ; vide, ils sont coupés |
 | SPOTIFY | 1 (activé) | Spotify Connect : ce que joue librespot (raspotify), d'après ses événements ; `0` désactive |
+| BLUETOOTH | 1 (activé) | Bluetooth : ce que joue un téléphone connecté à la machine, d'après BlueZ, voir [Bluetooth](#bluetooth) ; `0` désactive |
 | DATA_DIR | ce dossier | Où le pont enregistre les réglages d'affichage (`settings.json`) et l'historique d'écoute (`history.jsonl`) |
 | HISTORY | 1 (activé) | L'historique d'écoute ; `0` le coupe |
 | LISTENBRAINZ_TOKEN | vide (désactivé) | Scrobbling vers ListenBrainz : votre jeton utilisateur, voir [plus bas](#historique-découte) |
 | LASTFM_API_SECRET, LASTFM_SESSION_KEY | vide (désactivé) | Scrobbling vers Last.fm, avec `LASTFM_API_KEY`, voir [plus bas](#historique-découte) |
-| SCROBBLE_SOURCES | mpd,airplay | Ce qui est scrobblé : `mpd`, `airplay`, `spotify` |
+| SCROBBLE_SOURCES | mpd,airplay,bluetooth | Ce qui est scrobblé : `mpd`, `airplay`, `bluetooth`, `spotify` |
 | SETTINGS_PAGE | 1 (activé) | La page de réglages ; `0` la coupe (les réglages enregistrés s'appliquent toujours) |
 | UPDATE_CHECK | 1 (activé) | Une fois par jour, demande à GitHub la dernière version publiée : la page de réglages, le journal et `--check` signalent une version plus récente. Rien d'autre n'est envoyé ; `0` désactive |
 | DEMO | vide | `1` pour le mode démo : morceaux inventés, sans mpd |
@@ -179,6 +181,18 @@ sudo systemctl restart raspotify
 
 Si le pont utilise un autre port, ou HTTPS, ajoutez son adresse après le programme : `LIBRESPOT_ONEVENT="/usr/local/bin/nowplaying-spotify-event https://127.0.0.1:8766"`. Le pont n'accepte ces événements que depuis sa propre machine ; `--check` indique si raspotify lance le programme, et `SPOTIFY=0` coupe Spotify. Les détails du morceau demandent librespot 0.5 ou plus récent ; un librespot lancé autrement prend le même programme avec `--onevent`.
 
+## Bluetooth
+
+Quand un téléphone joue à travers cette machine en Bluetooth (la machine réglée en enceinte Bluetooth, par exemple avec [BlueALSA](https://github.com/arkq/bluez-alsa), PulseAudio ou PipeWire), la page affiche ce qu'il joue : titre, artiste, album, progression, et le nom du téléphone. Les téléphones n'envoient pas de pochette en Bluetooth : elle vient d'Internet, comme pour les radios. Comme AirPlay et Spotify, le Bluetooth passe en premier pendant la lecture.
+
+Rien à installer : toutes les quelques secondes, le pont interroge BlueZ (le service Bluetooth de Linux) avec `busctl`, fourni avec systemd. Il doit seulement en avoir le droit : sur Raspberry Pi OS, le premier utilisateur l'a ; sinon, ajoutez l'utilisateur qui fait tourner le pont au groupe `bluetooth`, puis redémarrez le pont :
+
+```bash
+sudo usermod -aG bluetooth "$USER"
+```
+
+`--check` indique ce que répond BlueZ, et `BLUETOOTH=0` coupe le Bluetooth. Les casques ou enceintes vers lesquels joue cette machine ne comptent pas : ce qu'ils jouent, c'est mpd. Indisponible avec Docker, qui n'a pas accès au Bluetooth de la machine.
+
 ## Historique d'écoute
 
 http://localhost:8766/history liste ce qui a été joué, par jour, depuis mpd, AirPlay ou Spotify, avec le morceau en cours en haut. Un morceau compte une fois écouté la moitié de sa durée ou 4 minutes, comme sur Last.fm (30 s pour les morceaux d'une radio) : les morceaux passés ne comptent pas. L'historique reste sur la machine, dans `history.jsonl` dans `DATA_DIR` (les 1000 derniers morceaux) ; `HISTORY=0` le coupe.
@@ -188,7 +202,7 @@ Ces écoutes peuvent aussi aller sur votre profil ListenBrainz ou Last.fm (scrob
 - **ListenBrainz** : copiez votre jeton utilisateur depuis https://listenbrainz.org/settings/ dans `.env`, en `LISTENBRAINZ_TOKEN=...`
 - **Last.fm** : créez un compte API sur https://www.last.fm/api/account/create (n'importe quel nom convient), mettez sa clé et son secret dans `.env`, en `LASTFM_API_KEY=...` et `LASTFM_API_SECRET=...`, puis lancez `python3 mpd-bridge.py --lastfm-login` : il vous donne une adresse où autoriser le pont, puis ajoute la clé de session à `.env`
 
-Redémarrez le pont ; `--check` indique sous quel nom il scrobble. Les écoutes qui ne partent pas (pas de réseau) repartent plus tard. Par défaut, les écoutes de mpd et d'AirPlay sont scrobblées : Spotify scrobble tout seul une fois relié à Last.fm, n'ajoutez donc `spotify` à `SCROBBLE_SOURCES` que s'il ne l'est pas. Si mpdscribble scrobble déjà mpd, retirez `mpd`.
+Redémarrez le pont ; `--check` indique sous quel nom il scrobble. Les écoutes qui ne partent pas (pas de réseau) repartent plus tard. Par défaut, les écoutes de mpd, d'AirPlay et du Bluetooth sont scrobblées : Spotify scrobble tout seul une fois relié à Last.fm, n'ajoutez donc `spotify` à `SCROBBLE_SOURCES` que s'il ne l'est pas. Si mpdscribble scrobble déjà mpd, retirez `mpd`.
 
 ## VU-mètres
 

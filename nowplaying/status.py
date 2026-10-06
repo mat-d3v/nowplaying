@@ -1,7 +1,7 @@
 """What's playing, whoever plays it, and the updates for the pages.
 
-mpd (or the demo mode) is always asked; AirPlay and Spotify Connect, when
-on, come first while they play (main.py sets them up). Each change is
+mpd (or the demo mode) is always asked; AirPlay, Spotify Connect and
+Bluetooth, when on, come first while they play (main.py sets them up). Each change is
 pushed to the pages listening on /events, and to the listening history.
 """
 import logging
@@ -19,7 +19,7 @@ from .audio import display_title, get_audio_format, get_codec
 log = logging.getLogger('nowplaying')
 
 # Set up by main.py, when the bridge runs
-AIRPLAY = SPOTIFY = None   # shairport.AirPlay, spotify.Spotify
+AIRPLAY = SPOTIFY = BLUETOOTH = None  # shairport.AirPlay, spotify.Spotify, bluetooth.Bluetooth
 OTHER_PLAYERS = []         # the players besides mpd
 LEVELS = None              # levels.LevelMeter, for the VU meters
 LISTENING = None           # history.Listening
@@ -108,8 +108,8 @@ PROBLEMS = {'mpd_unreachable': 'unreachable', 'mpd_password': 'refused access (c
 
 def player_status(player):
     data = player.status()
-    if data and player is AIRPLAY and not data['art_url']:
-        data['art_url'] = airplay_artwork()
+    if data and not data['art_url'] and hasattr(player, 'cover_wanted'):
+        data['art_url'] = online_cover(player)
     return data
 
 
@@ -117,11 +117,12 @@ _cover_timer = None  # pushes the status again once AirPlay's cover had time to 
 _cover_lock = threading.Lock()
 
 
-def airplay_artwork():
+def online_cover(player):
     # Online artwork for what's played over AirPlay without a cover, once
-    # the cover had time to come: no other artwork flashing by first
+    # the cover had time to come (no other artwork flashing by first), and
+    # over Bluetooth, which never gives one
     global _cover_timer
-    wanted = AIRPLAY.cover_wanted()
+    wanted = player.cover_wanted()
     if not wanted:
         return ''
     wait, artist, title, album = wanted
@@ -143,8 +144,8 @@ def _cover_wait_over():
 
 
 def other_players():
-    # What AirPlay and Spotify are up to: (playing, paused) payloads, the
-    # one that started playing last first
+    # What AirPlay, Spotify and Bluetooth are up to: (playing, paused)
+    # payloads, the one that started playing last first
     found = sorted(((player.started, data) for player in OTHER_PLAYERS for data in [player_status(player)] if data),
                    key=lambda found: found[0], reverse=True)
     return ([data for _, data in found if data['state'] == 'play'],
@@ -152,9 +153,9 @@ def other_players():
 
 
 def status_or_error():
-    # (payload, HTTP status): what's playing, or why mpd can't say. AirPlay
-    # and Spotify come first while they play (the last one started, if
-    # both do), and while paused if mpd isn't playing
+    # (payload, HTTP status): what's playing, or why mpd can't say. AirPlay,
+    # Spotify and Bluetooth come first while they play (the last one
+    # started, if several do), and while paused if mpd isn't playing
     global _mpd_problem
     playing, paused = other_players()
     if playing:
@@ -179,7 +180,7 @@ def status_or_error():
             log.warning('mpd at %s:%s %s: %s', config.MPD_HOST, config.MPD_PORT, PROBLEMS[problem[0]], problem[1])
         _mpd_problem = problem
     if paused:
-        return paused[0], 200  # paused AirPlay or Spotify beats an mpd error
+        return paused[0], 200  # a paused player beats an mpd error
     return {'error': problem[0], 'detail': problem[1]}, 503
 
 

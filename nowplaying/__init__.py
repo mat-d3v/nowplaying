@@ -1,5 +1,5 @@
 """nowplaying: a full-screen "Now Playing" page for mpd, and what plays
-through AirPlay and Spotify Connect, with the bridge serving it.
+through AirPlay, Spotify Connect and Bluetooth, with the bridge serving it.
 
 mpd-bridge.py runs it (see main.py); one module per job:
 
@@ -11,7 +11,9 @@ mpd-bridge.py runs it (see main.py); one module per job:
     display    the display settings of the settings page
     server     the web server: pages, updates, artwork
     check      --check and --lastfm-login
-    shairport, spotify, levels, history, demo: AirPlay, Spotify Connect,
-    the VU meters' levels, the listening history, the demo mode
+    updates    is a newer version out?
+    shairport, spotify, bluetooth, levels, history, demo: AirPlay, Spotify
+    Connect, Bluetooth, the VU meters' levels, the listening history, the
+    demo mode
 """
 VERSION = '1.1.1'  # with a matching section in CHANGELOG.md

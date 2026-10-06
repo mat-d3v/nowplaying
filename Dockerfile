@@ -16,7 +16,8 @@ COPY assets/icon-192.png assets/logo.png assets/apple-touch-icon.png assets/touc
 RUN adduser -S -D -H -u 10001 nowplaying \
     && mkdir /data && chown nowplaying /data
 USER nowplaying
-ENV DATA_DIR=/data
+# No Bluetooth: the container can't reach the machine's BlueZ
+ENV DATA_DIR=/data BLUETOOTH=0
 VOLUME /data
 
 EXPOSE 8766

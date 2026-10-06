@@ -23,10 +23,12 @@ ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, ROOT]
 
 from fake_mpd import GRAY_PNG, FakeMPD  # noqa: E402
+import fake_bluez  # noqa: E402
 import fake_fifo  # noqa: E402
 import fake_shairport  # noqa: E402
 import nowplaying  # noqa: E402
-from nowplaying import artwork, audio, check, config, demo, display, mpd, shairport, status, updates  # noqa: E402
+from nowplaying import (artwork, audio, bluetooth, check, config, demo, display, mpd, shairport,  # noqa: E402
+                        status, updates)
 
 
 class CodecTest(unittest.TestCase):
@@ -287,7 +289,7 @@ class Bridge:
         self.data = tempfile.mkdtemp()  # what it saves
         settings = dict(MPD_HOST='127.0.0.1', MPD_PORT=str(mpd_port), PORT=str(self.port), MPD_PASSWORD='',
                         LASTFM_API_KEY='', ITUNES_ARTWORK='0', TLS_CERT='', TLS_KEY='', ALSA_CARD='99',
-                        SHAIRPORT_PIPE='', MPD_FIFO='', DATA_DIR=self.data, UPDATE_CHECK='0')
+                        SHAIRPORT_PIPE='', MPD_FIFO='', DATA_DIR=self.data, UPDATE_CHECK='0', BLUETOOTH='0')
         settings.update(env)
         self.https = bool(settings['TLS_CERT'])
         self.log = tempfile.TemporaryFile('w+')
@@ -442,7 +444,8 @@ class OnlineArtStatusTest(BridgeTestCase):
 def run_check(mpd_port, **env):
     settings = dict(MPD_HOST='127.0.0.1', MPD_PORT=str(mpd_port), PORT=str(free_port()), MPD_PASSWORD='',
                     LASTFM_API_KEY='', ITUNES_ARTWORK='0', TLS_CERT='', TLS_KEY='', ALSA_CARD='99',
-                    SHAIRPORT_PIPE='', MPD_FIFO='', DATA_DIR=tempfile.gettempdir(), UPDATE_CHECK='0')
+                    SHAIRPORT_PIPE='', MPD_FIFO='', DATA_DIR=tempfile.gettempdir(), UPDATE_CHECK='0',
+                    BLUETOOTH='0')
     settings.update(env)
     result = subprocess.run([sys.executable, os.path.join(ROOT, 'mpd-bridge.py'), '--check'],
                             env=dict(os.environ, **settings), capture_output=True, text=True, timeout=30)
@@ -697,6 +700,161 @@ class AirPlayArtworkTest(unittest.TestCase):
         self.send(fake_shairport.SCENARIOS['play'])
         self.assertTrue(self.art().startswith('/art?airplay='))
         artwork.itunes_search.assert_not_called()
+
+
+# busctl's answer for a phone playing, as it writes it
+BUSCTL_JSON = json.dumps({'type': 'a{oa{sa{sv}}}', 'data': [{
+    fake_bluez.PHONE: {'org.bluez.Device1': {'Alias': {'type': 's', 'data': "Mat's iPhone"}}},
+    fake_bluez.PHONE + '/player0': {'org.bluez.MediaPlayer1': {
+        'Status': {'type': 's', 'data': 'playing'}, 'Position': {'type': 'u', 'data': 42000},
+        'Device': {'type': 'o', 'data': fake_bluez.PHONE},
+        'Track': {'type': 'a{sv}', 'data': {'Title': {'type': 's', 'data': 'Harbor Lights'},
+                                            'Duration': {'type': 'u', 'data': 200000}}}}},
+}]})
+
+
+class BluetoothTest(unittest.TestCase):
+    def test_busctl_answer(self):
+        objects = bluetooth.plain(json.loads(BUSCTL_JSON)['data'][0])
+        self.assertEqual(objects[fake_bluez.PHONE + '/player0']['org.bluez.MediaPlayer1']['Track'],
+                         {'Title': 'Harbor Lights', 'Duration': 200000})
+        self.assertEqual(bluetooth.playing(objects)['sender'], "Mat's iPhone")
+
+    def test_what_plays(self):
+        playing = bluetooth.playing
+        self.assertEqual(playing(fake_bluez.objects(fake_bluez.phone())), {
+            'device': fake_bluez.PHONE, 'sender': "Mat's iPhone", 'state': 'play', 'title': 'Harbor Lights',
+            'artist': 'June Avenue', 'album': 'Night Ferries', 'duration': 200.0, 'position': 42.0})
+        self.assertEqual(playing(fake_bluez.objects(fake_bluez.phone('paused')))['state'], 'pause')
+        self.assertIsNone(playing(fake_bluez.objects(fake_bluez.phone('stopped', transport='idle'))))
+        self.assertIsNone(playing(fake_bluez.objects()))
+        # Headphones this machine plays to: what they play is mpd's
+        self.assertIsNone(playing(fake_bluez.objects(fake_bluez.headphones())))
+        self.assertEqual(playing(fake_bluez.objects(fake_bluez.headphones(), fake_bluez.phone('paused')))['state'],
+                         'pause')
+        # Sound from a device that doesn't say what it plays
+        quiet = fake_bluez.device(fake_bluez.PHONE, 'Office Mac', fake_bluez.SINK)
+        self.assertEqual({k: playing(fake_bluez.objects(quiet))[k] for k in ('state', 'title', 'sender')},
+                         {'state': 'play', 'title': '', 'sender': 'Office Mac'})
+        # AVRCP's "unknown" duration
+        self.assertEqual(playing(fake_bluez.objects(fake_bluez.phone(duration=0xFFFFFFFF)))['duration'], 0)
+
+    def test_changes(self):
+        phone = bluetooth.Bluetooth()
+        now = [1000.0]
+
+        def update(**track):
+            with mock.patch('time.monotonic', return_value=now[0]):
+                return phone.update(fake_bluez.objects(fake_bluez.phone(**track)) if track.get('status', 1) else None)
+        self.assertTrue(update(position=42000))
+        self.assertEqual(phone.status()['source'], 'bluetooth')
+        self.assertFalse(update(position=42000))           # nothing new
+        now[0] += 10
+        self.assertFalse(update(position=52000))           # it plays on: no news for the page
+        with mock.patch('time.monotonic', return_value=now[0] + 2):
+            self.assertAlmostEqual(phone.status()['elapsed'], 54)
+        self.assertTrue(update(position=150000))           # a seek
+        self.assertTrue(update(status='paused', position=150000))
+        self.assertTrue(update(title='Second Wind', position=0))
+        self.assertTrue(update(status=None))               # gone
+        self.assertIsNone(phone.status())
+
+    def test_artwork_online(self):
+        phone = bluetooth.Bluetooth()
+        phone.update(fake_bluez.objects(fake_bluez.phone()))
+        self.assertEqual(phone.cover_wanted(), (0, 'June Avenue', 'Harbor Lights', 'Night Ferries'))
+        phone.update(fake_bluez.objects(fake_bluez.phone(artist='')))
+        self.assertIsNone(phone.cover_wanted())
+
+    def test_problems(self):
+        for text, kind in [('Call failed: The name org.bluez was not provided by any .service files', 'missing'),
+                           ('Failed to connect to bus: No such file or directory', 'missing'),
+                           ("busctl not found (systemd's D-Bus tool)", 'missing'),
+                           ('Call failed: Access denied', 'denied'),
+                           ('Call failed: Timeout was reached', 'error')]:
+            with self.subTest(text=text):
+                self.assertEqual(bluetooth.problem(bluetooth.BusError(text)), kind)
+
+    def test_through_busctl(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        state = os.path.join(tmp, 'bluez.json')
+        command = [fake_bluez.install(tmp)] + bluetooth.COMMAND[1:]
+        with mock.patch.object(bluetooth, 'COMMAND', command), mock.patch.dict(os.environ, FAKE_BLUEZ=state):
+            fake_bluez.write(state, fake_bluez.objects(fake_bluez.phone()))
+            self.assertEqual(bluetooth.playing(bluetooth.managed_objects())['title'], 'Harbor Lights')
+            fake_bluez.write(state, error='Call failed: Access denied')
+            with self.assertRaisesRegex(bluetooth.BusError, 'Access denied'):
+                bluetooth.managed_objects()
+        with mock.patch.object(bluetooth, 'COMMAND', [os.path.join(tmp, 'nothing-here')]):
+            with self.assertRaisesRegex(bluetooth.BusError, 'busctl not found'):
+                bluetooth.managed_objects()
+
+
+class BluetoothBridgeTest(BridgeTestCase):
+    # The bridge, its fake busctl first in PATH
+    def setUp(self):
+        super().setUp()  # mpd plays a FLAC ("Song")
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        self.state = os.path.join(tmp, 'bluez.json')
+        fake_bluez.write(self.state)
+        fake_bluez.install(tmp)
+        self.env = dict(BLUETOOTH='1', FAKE_BLUEZ=self.state, PATH=tmp + os.pathsep + os.environ.get('PATH', ''))
+
+    def wait_for(self, b, check, timeout=8):
+        deadline = time.time() + timeout
+        while True:
+            status, data = b.now()
+            if check(data) or time.time() > deadline:
+                return status, data
+            time.sleep(0.1)
+
+    def test_bluetooth_and_mpd_take_turns(self):
+        b = self.start_bridge(**self.env)
+        self.assertEqual(b.now()[1]['source'], 'mpd')
+        fake_bluez.write(self.state, fake_bluez.objects(fake_bluez.phone()))
+        _, data = self.wait_for(b, lambda d: d['source'] == 'bluetooth')
+        self.assertEqual({k: data[k] for k in ('state', 'title', 'artist', 'codec', 'sender', 'duration')},
+                         {'state': 'play', 'title': 'Harbor Lights', 'artist': 'June Avenue', 'codec': 'Bluetooth',
+                          'sender': "Mat's iPhone", 'duration': 200.0})
+        self.assertGreaterEqual(data['elapsed'], 42)
+        # Paused while mpd plays: mpd shows
+        fake_bluez.write(self.state, fake_bluez.objects(fake_bluez.phone('paused')))
+        _, data = self.wait_for(b, lambda d: d['source'] == 'mpd')
+        self.assertEqual(data['title'], 'Song')
+        # Playing again, then gone
+        fake_bluez.write(self.state, fake_bluez.objects(fake_bluez.phone()))
+        self.wait_for(b, lambda d: d['source'] == 'bluetooth')
+        fake_bluez.write(self.state, fake_bluez.objects())
+        self.assertEqual(self.wait_for(b, lambda d: d['source'] == 'mpd')[1]['source'], 'mpd')
+
+    def test_changes_are_pushed(self):
+        b = self.start_bridge(**self.env)
+        conn = http.client.HTTPConnection('127.0.0.1', b.port, timeout=10)
+        self.addCleanup(conn.close)
+        conn.request('GET', '/events')
+        response = conn.getresponse()
+        self.assertEqual(read_event(response)['source'], 'mpd')
+        fake_bluez.write(self.state, fake_bluez.objects(fake_bluez.phone()))
+        sources = [read_event(response)['source']]
+        while sources[-1] != 'bluetooth' and len(sources) < 5:
+            sources.append(read_event(response)['source'])
+        self.assertEqual(sources[-1], 'bluetooth')
+
+    def test_check(self):
+        for state, line in [(dict(found=fake_bluez.objects(fake_bluez.phone())),
+                             "ok    Bluetooth: Mat's iPhone plays June Avenue - Harbor Lights"),
+                            (dict(found=fake_bluez.objects()), 'ok    Bluetooth: BlueZ answers, no device connected'),
+                            (dict(error='Call failed: Access denied'), 'FAIL  Bluetooth: BlueZ refused to answer'),
+                            (dict(error='Call failed: The name org.bluez was not provided by any .service files'),
+                             '--    Bluetooth: cannot ask BlueZ')]:
+            with self.subTest(line=line):
+                fake_bluez.write(self.state, **state)
+                code, out = run_check(self.mpd.port, **self.env)
+                self.assertIn(line, out)
+        code, out = run_check(self.mpd.port, BLUETOOTH='0')
+        self.assertIn('Bluetooth: off (BLUETOOTH=0)', out)
 
 
 @unittest.skipUnless(hasattr(os, 'mkfifo'), 'needs named pipes')

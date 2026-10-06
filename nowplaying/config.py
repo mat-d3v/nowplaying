@@ -65,6 +65,8 @@ DEMO = os.environ.get('DEMO', '').strip().lower() in ('1', 'true', 'yes', 'on')
 SHAIRPORT_PIPE = os.environ.get('SHAIRPORT_PIPE', '/tmp/shairport-sync-metadata').strip()
 # Spotify Connect: librespot's events, posted by spotify-event.py
 SPOTIFY_ENABLED = _on('SPOTIFY')
+# Bluetooth: what a phone streaming here plays, from BlueZ (bluetooth.py)
+BLUETOOTH = _on('BLUETOOTH')
 # VU meters: mpd's fifo output (levels.py); empty turns them off
 MPD_FIFO = os.environ.get('MPD_FIFO', '/tmp/mpd.fifo').strip()
 
@@ -79,7 +81,8 @@ HISTORY_ENABLED = _on('HISTORY')
 LISTENBRAINZ_TOKEN = os.environ.get('LISTENBRAINZ_TOKEN', '').strip()
 LASTFM_SECRET = os.environ.get('LASTFM_API_SECRET', '').strip()
 LASTFM_SESSION = os.environ.get('LASTFM_SESSION_KEY', '').strip()
-SCROBBLE_SOURCES = [s.strip() for s in os.environ.get('SCROBBLE_SOURCES', 'mpd,airplay').split(',') if s.strip()]
+SCROBBLE_SOURCES = [s.strip() for s in os.environ.get('SCROBBLE_SOURCES', 'mpd,airplay,bluetooth').split(',')
+                    if s.strip()]
 
 # Once a day, ask GitHub whether a newer version is out (updates.py)
 UPDATE_CHECK = _on('UPDATE_CHECK')

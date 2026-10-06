@@ -7,6 +7,8 @@
 - The settings page shows the version running, and when a newer one is out, with a link to what's new: once a day the bridge asks GitHub for its latest release (nothing else is sent; `UPDATE_CHECK=0` turns it off). The log and `--check` say so too.
 - AirPlay: when the app playing gives no cover (some radio apps, some Android apps), the artwork is looked up online (iTunes, or Last.fm with a key), as for radios. The bridge first gives the cover 3 seconds to come, so no other artwork flashes by; when the sender says it has none, it looks at once.
 
+- Bluetooth: what a phone plays through the machine, set up as a Bluetooth speaker (BlueALSA, PulseAudio, PipeWire), shows up too: title, artist, album, progress, and the phone's name, with artwork from the Internet. The bridge asks BlueZ every few seconds with `busctl` (systemd's); headphones the machine plays to don't count. `--check` says what BlueZ answers, `BLUETOOTH=0` turns it off. Its plays are scrobbled by default, like AirPlay's.
+
 ### Changed
 
 - The bridge's code is split into modules, in the `nowplaying` folder next to `mpd-bridge.py`, which still starts it: same commands, same settings. An install that copies files by hand needs that folder too (`git pull` brings it).

@@ -12,7 +12,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from . import VERSION, artwork, config, history, mpd, status, updates
+from . import VERSION, artwork, bluetooth, config, history, mpd, status, updates
 from .audio import describe_badges, display_title, get_alsa_format, get_audio_format, get_codec
 
 RASPOTIFY_CONF = '/etc/raspotify/conf'  # raspotify's settings for librespot
@@ -113,6 +113,7 @@ def check():
         report('ok', f'AirPlay: shairport-sync metadata pipe at {pipe}')
 
     check_spotify(report)
+    check_bluetooth(report)
 
     # Settings page
     if not config.SETTINGS_PAGE:
@@ -227,6 +228,34 @@ def check_version(report):
         report('warn', f'Version {VERSION}: {latest["version"]} is out', f'What\'s new, and how to update: {latest["url"]}')
     else:
         report('ok', f'Version {VERSION}, the latest')
+
+
+def check_bluetooth(report):
+    if config.DEMO or not config.BLUETOOTH:
+        report('--', 'Bluetooth: off' + (' (demo mode)' if config.DEMO else ' (BLUETOOTH=0)'))
+        return
+    try:
+        objects = bluetooth.managed_objects()
+    except bluetooth.BusError as e:
+        kind = bluetooth.problem(e)
+        if kind == 'denied':
+            report('FAIL', f'Bluetooth: BlueZ refused to answer ({e})',
+                   'Add the user running the bridge to the "bluetooth" group (sudo usermod -aG bluetooth '
+                   'USER), then restart the bridge')
+        else:
+            report('--', f'Bluetooth: cannot ask BlueZ ({e})',
+                   'To show what a phone plays over Bluetooth, see "Bluetooth" in the README')
+        return
+    devices = [interfaces['org.bluez.Device1'] for interfaces in objects.values() if 'org.bluez.Device1' in interfaces]
+    connected = [device.get('Alias') or device.get('Address', '?') for device in devices if device.get('Connected')]
+    found = bluetooth.playing(objects)
+    if found:
+        what = ' - '.join(filter(None, (found['artist'], found['title']))) or 'sound, without what it plays'
+        report('ok', f'Bluetooth: {found["sender"] or "a device"} {"plays" if found["state"] == "play" else "paused"} '
+               f'{what}')
+    else:
+        report('ok', 'Bluetooth: BlueZ answers, ' + (f'connected: {", ".join(connected)}' if connected
+                                                     else 'no device connected'))
 
 
 def check_spotify(report):

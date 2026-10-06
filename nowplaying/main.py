@@ -1,11 +1,12 @@
 """Starts the bridge: python3 mpd-bridge.py [--check | --lastfm-login | --version]."""
 import logging
 import os
+import shutil
 import ssl
 import sys
 import threading
 
-from . import VERSION, check, config, history, levels, shairport, spotify, status, updates
+from . import VERSION, bluetooth, check, config, history, levels, shairport, spotify, status, updates
 from .server import Handler, Server
 
 log = logging.getLogger('nowplaying')
@@ -55,18 +56,25 @@ def main():
         threading.Thread(target=shairport.follow, args=(config.SHAIRPORT_PIPE, status.AIRPLAY,
                                                         status.publish_status, log),
                          name='airplay', daemon=True).start()
+    if status.BLUETOOTH:
+        threading.Thread(target=bluetooth.follow, args=(status.BLUETOOTH, status.publish_status, log),
+                         name='bluetooth', daemon=True).start()
     if config.UPDATE_CHECK:
         threading.Thread(target=updates.watch, name='version-check', daemon=True).start()
     server.serve_forever()
 
 
 def start_players():
-    # AirPlay and Spotify Connect besides mpd (not in the demo mode), and
-    # the VU meters' levels
+    # AirPlay, Spotify Connect and Bluetooth besides mpd (not in the demo
+    # mode), and the VU meters' levels
     if not config.DEMO:
         status.AIRPLAY = shairport.AirPlay() if config.SHAIRPORT_PIPE else None
         status.SPOTIFY = spotify.Spotify() if config.SPOTIFY_ENABLED else None
-    status.OTHER_PLAYERS = [player for player in (status.AIRPLAY, status.SPOTIFY) if player]
+        if config.BLUETOOTH and shutil.which('busctl'):
+            status.BLUETOOTH = bluetooth.Bluetooth()
+        elif config.BLUETOOTH:
+            log.info("Bluetooth: off, busctl (systemd's D-Bus tool) not found")
+    status.OTHER_PLAYERS = [player for player in (status.AIRPLAY, status.SPOTIFY, status.BLUETOOTH) if player]
     status.LEVELS = (levels.LevelMeter(levels.demo_levels) if config.DEMO
                      else levels.LevelMeter(levels.fifo_levels(config.MPD_FIFO, log)) if config.MPD_FIFO
                      else None)
