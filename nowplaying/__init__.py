@@ -16,4 +16,4 @@ mpd-bridge.py runs it (see main.py); one module per job:
     Connect, Bluetooth, the VU meters' levels, the listening history, the
     demo mode
 """
-VERSION = '1.1.1'  # with a matching section in CHANGELOG.md
+VERSION = '1.2.0'  # with a matching section in CHANGELOG.md
