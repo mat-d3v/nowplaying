@@ -86,7 +86,7 @@ async function waitFor(fn, expected, timeout = 5000) {
   const bridge = start('mpd-bridge.py', [], {
     MPD_HOST: '127.0.0.1', MPD_PORT: String(MPD_PORT), PORT: String(BRIDGE_PORT), MPD_PASSWORD: '',
     LASTFM_API_KEY: '', ITUNES_ARTWORK: '0', TLS_CERT: '', TLS_KEY: '', SHAIRPORT_PIPE: PIPE, MPD_FIFO: FIFO,
-    DATA_DIR: DATA, UPDATE_CHECK: '0', BLUETOOTH: '1', FAKE_BLUEZ: BLUEZ, PATH: DATA + path.delimiter + process.env.PATH,
+    DATA_DIR: DATA, UPDATE_CHECK: '0', MQTT_HOST: '', BLUETOOTH: '1', FAKE_BLUEZ: BLUEZ, PATH: DATA + path.delimiter + process.env.PATH,
   });
   const browser = await chromium.launch();
   try {

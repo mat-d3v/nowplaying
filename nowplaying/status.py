@@ -23,6 +23,7 @@ AIRPLAY = SPOTIFY = BLUETOOTH = None  # shairport.AirPlay, spotify.Spotify, blue
 OTHER_PLAYERS = []         # the players besides mpd
 LEVELS = None              # levels.LevelMeter, for the VU meters
 LISTENING = None           # history.Listening
+MQTT = None                # mqtt.Client, for Home Assistant
 
 
 def is_fifo(path):
@@ -223,7 +224,7 @@ def publish_status():
     # the pages listening. Never raises: the watcher thread must outlive any
     # bug in here, or the pages would keep a live but silent event stream
     # and freeze
-    if not (LISTENING or events.has_clients()):
+    if not (LISTENING or MQTT or events.has_clients()):
         return
     with _publish_lock:
         try:
@@ -236,6 +237,8 @@ def publish_status():
                 LISTENING.observe(status)
             except Exception:
                 log.exception('listening history failed')
+        if MQTT:
+            MQTT.publish_status(status)
         events.publish(status)
 
 

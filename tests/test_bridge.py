@@ -22,13 +22,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, ROOT]
 
+from fake_broker import FakeBroker  # noqa: E402
 from fake_mpd import GRAY_PNG, FakeMPD  # noqa: E402
 import fake_bluez  # noqa: E402
 import fake_fifo  # noqa: E402
 import fake_shairport  # noqa: E402
 import nowplaying  # noqa: E402
-from nowplaying import (artwork, audio, bluetooth, check, config, demo, display, mpd, shairport,  # noqa: E402
-                        status, updates)
+from nowplaying import (artwork, audio, bluetooth, check, config, demo, display, mpd, mqtt,  # noqa: E402
+                        shairport, status, updates)
 
 
 class CodecTest(unittest.TestCase):
@@ -244,7 +245,8 @@ class UpdatesTest(unittest.TestCase):
             calls.append(seconds)
             if len(calls) > 3:
                 raise StopIteration  # out of the endless loop
-        with self.release('v99.0.0'), mock.patch('time.sleep', sleep), self.assertLogs('nowplaying') as logs:
+        with self.release('v99.0.0'), mock.patch.object(updates, 'time', mock.Mock(sleep=sleep)), \
+                self.assertLogs('nowplaying') as logs:
             with self.assertRaises(StopIteration):
                 updates.watch()
         self.assertEqual(calls, [updates.FIRST_CHECK, updates.EVERY, updates.EVERY, updates.EVERY])
@@ -289,7 +291,8 @@ class Bridge:
         self.data = tempfile.mkdtemp()  # what it saves
         settings = dict(MPD_HOST='127.0.0.1', MPD_PORT=str(mpd_port), PORT=str(self.port), MPD_PASSWORD='',
                         LASTFM_API_KEY='', ITUNES_ARTWORK='0', TLS_CERT='', TLS_KEY='', ALSA_CARD='99',
-                        SHAIRPORT_PIPE='', MPD_FIFO='', DATA_DIR=self.data, UPDATE_CHECK='0', BLUETOOTH='0')
+                        SHAIRPORT_PIPE='', MPD_FIFO='', DATA_DIR=self.data, UPDATE_CHECK='0', BLUETOOTH='0',
+                        MQTT_HOST='')
         settings.update(env)
         self.https = bool(settings['TLS_CERT'])
         self.log = tempfile.TemporaryFile('w+')
@@ -445,7 +448,7 @@ def run_check(mpd_port, **env):
     settings = dict(MPD_HOST='127.0.0.1', MPD_PORT=str(mpd_port), PORT=str(free_port()), MPD_PASSWORD='',
                     LASTFM_API_KEY='', ITUNES_ARTWORK='0', TLS_CERT='', TLS_KEY='', ALSA_CARD='99',
                     SHAIRPORT_PIPE='', MPD_FIFO='', DATA_DIR=tempfile.gettempdir(), UPDATE_CHECK='0',
-                    BLUETOOTH='0')
+                    BLUETOOTH='0', MQTT_HOST='')
     settings.update(env)
     result = subprocess.run([sys.executable, os.path.join(ROOT, 'mpd-bridge.py'), '--check'],
                             env=dict(os.environ, **settings), capture_output=True, text=True, timeout=30)
@@ -855,6 +858,114 @@ class BluetoothBridgeTest(BridgeTestCase):
                 self.assertIn(line, out)
         code, out = run_check(self.mpd.port, BLUETOOTH='0')
         self.assertIn('Bluetooth: off (BLUETOOTH=0)', out)
+
+
+class MqttTest(unittest.TestCase):
+    def test_lengths(self):
+        # MQTT's "remaining length": 7 bits a byte
+        for n, encoded in [(0, b'\x00'), (127, b'\x7f'), (128, b'\x80\x01'), (16383, b'\xff\x7f'),
+                           (16384, b'\x80\x80\x01'), (2097151, b'\xff\xff\x7f')]:
+            with self.subTest(n=n):
+                self.assertEqual(mqtt._length(n), encoded)
+
+    def test_state_for_home_assistant(self):
+        state = mqtt.state_payload({
+            'state': 'play', 'title': 'Song', 'artist': 'Art', 'album': 'Alb', 'source': 'mpd', 'codec': 'FLAC',
+            'format': '96000:24:2', 'lossless': True, 'duration': 200.04, 'elapsed': 12.345,
+            'art_url': '/art?file=a.flac'}, 'http://192.168.1.20:8766')
+        self.assertEqual({k: state[k] for k in ('state', 'title', 'badges', 'quality', 'hires', 'art_url', 'elapsed')}, {
+            'state': 'play', 'title': 'Song', 'badges': ['FLAC', '24bit / 96.0 kHz', 'Hi-Res'],
+            'quality': 'FLAC · 24bit / 96.0 kHz · Hi-Res', 'hires': True,
+            'art_url': 'http://192.168.1.20:8766/art?file=a.flac', 'elapsed': 12.3})
+        radio = mqtt.state_payload({'state': 'play', 'title': 'Radio X', 'artist': '—', 'art_url': 'https://a/b.jpg'},
+                                   'http://x')
+        self.assertEqual((radio['artist'], radio['art_url']), ('', 'https://a/b.jpg'))
+        error = mqtt.state_payload({'error': 'mpd_unreachable', 'detail': 'refused'}, 'http://x')
+        self.assertEqual((error['state'], error['error'], error['badges']), ('error', 'mpd_unreachable', []))
+
+    def test_discovery(self):
+        configs = dict(mqtt.discovery('nowplaying', 'homeassistant', 'http://192.168.1.20:8766'))
+        self.assertEqual(sorted(configs), [
+            'homeassistant/binary_sensor/nowplaying/playing/config', 'homeassistant/image/nowplaying/artwork/config',
+            'homeassistant/sensor/nowplaying/album/config', 'homeassistant/sensor/nowplaying/artist/config',
+            'homeassistant/sensor/nowplaying/quality/config', 'homeassistant/sensor/nowplaying/source/config',
+            'homeassistant/sensor/nowplaying/state/config', 'homeassistant/sensor/nowplaying/title/config'])
+        title = configs['homeassistant/sensor/nowplaying/title/config']
+        self.assertEqual({k: title[k] for k in ('name', 'unique_id', 'state_topic', 'value_template',
+                                                'json_attributes_topic', 'availability_topic')}, {
+            'name': 'Title', 'unique_id': 'nowplaying_title', 'state_topic': 'nowplaying/state',
+            'value_template': '{{ value_json.title }}', 'json_attributes_topic': 'nowplaying/state',
+            'availability_topic': 'nowplaying/availability'})
+        self.assertEqual(title['device']['name'], 'Now Playing')
+        self.assertEqual(title['device']['configuration_url'], 'http://192.168.1.20:8766/settings')
+        self.assertEqual(configs['homeassistant/image/nowplaying/artwork/config']['url_topic'], 'nowplaying/artwork')
+        # Another bridge, its own topic: its own device
+        other = dict(mqtt.discovery('nowplaying/kitchen', 'homeassistant', 'http://x'))
+        self.assertIn('homeassistant/sensor/nowplaying_kitchen/title/config', other)
+        self.assertEqual(other['homeassistant/sensor/nowplaying_kitchen/title/config']['device']['name'],
+                         'Now Playing nowplaying_kitchen')
+
+
+class MqttBridgeTest(BridgeTestCase):
+    # The bridge publishing to a fake broker; mpd plays a FLAC ("Song")
+    def start_broker(self, refuse=0):
+        broker = FakeBroker(refuse).start()
+        self.addCleanup(broker.server_close)
+        self.addCleanup(broker.shutdown)
+        return broker
+
+    def mqtt_env(self, broker, **env):
+        return dict(MQTT_HOST='127.0.0.1', MQTT_PORT=str(broker.port), PUBLIC_URL='http://nowplaying.local:8766',
+                    **env)
+
+    def test_published(self):
+        broker = self.start_broker()
+        b = self.start_bridge(**self.mqtt_env(broker, MQTT_USER='ha', MQTT_PASSWORD='secret'))
+        state = lambda: json.loads(broker.retained.get('nowplaying/state', '{}'))  # noqa: E731
+        broker.wait_for(lambda: state().get('title') == 'Song')
+        client = broker.clients[0]
+        self.assertEqual({k: client[k] for k in ('protocol', 'clean', 'user', 'password', 'will', 'will_retain')}, {
+            'protocol': ('MQTT', 4), 'clean': True, 'user': 'ha', 'password': 'secret',
+            'will': ('nowplaying/availability', 'offline'), 'will_retain': True})
+        self.assertEqual(broker.retained['nowplaying/availability'], 'online')
+        self.assertEqual(state()['quality'], 'FLAC · 24bit / 96.0 kHz · Hi-Res')
+        self.assertEqual(broker.retained['nowplaying/artwork'],
+                         'http://nowplaying.local:8766/art?file=Music%2FAlbum%2F01%20Song.flac')
+        title = json.loads(broker.retained['homeassistant/sensor/nowplaying/title/config'])
+        self.assertEqual(title['device']['configuration_url'], 'http://nowplaying.local:8766/settings')
+        # A change, pushed at once
+        self.mpd.set_scenario('mp3_mad')
+        broker.wait_for(lambda: state().get('title') == 'Song MP3')
+        self.assertEqual(broker.retained['nowplaying/artwork'], 'http://nowplaying.local:8766/icon-512.png')
+        # The bridge stops: the broker says it's gone
+        b.stop()
+        broker.wait_for(lambda: broker.retained['nowplaying/availability'] == 'offline')
+
+    def test_without_discovery(self):
+        broker = self.start_broker()
+        self.start_bridge(**self.mqtt_env(broker, MQTT_DISCOVERY='0', MQTT_TOPIC='salon/nowplaying'))
+        broker.wait_for(lambda: 'salon/nowplaying/state' in broker.retained)
+        self.assertFalse([topic for topic in broker.retained if topic.startswith('homeassistant/')])
+
+    def test_refused(self):
+        broker = self.start_broker(refuse=5)
+        b = self.start_bridge(**self.mqtt_env(broker))
+        broker.wait_for(lambda: broker.clients)
+        time.sleep(0.3)
+        self.assertIn('MQTT: cannot connect to 127.0.0.1', b.stop())
+        code, out = run_check(self.mpd.port, **self.mqtt_env(broker))
+        self.assertEqual(code, 1, out)
+        self.assertIn('FAIL  MQTT broker at 127.0.0.1', out)
+        self.assertIn('not authorized', out)
+
+    def test_check(self):
+        broker = self.start_broker()
+        code, out = run_check(self.mpd.port, **self.mqtt_env(broker))
+        self.assertIn(f'ok    MQTT broker at 127.0.0.1:{broker.port}: publishing to nowplaying/, Home Assistant '
+                      'finds it (homeassistant/...)', out)
+        self.assertTrue(broker.clients[0]['client_id'].startswith('nowplaying-check-'))  # not the bridge's own
+        code, out = run_check(self.mpd.port)
+        self.assertIn('Home Assistant (MQTT): off (no MQTT_HOST)', out)
 
 
 @unittest.skipUnless(hasattr(os, 'mkfifo'), 'needs named pipes')

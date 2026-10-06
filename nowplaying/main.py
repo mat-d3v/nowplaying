@@ -6,7 +6,7 @@ import ssl
 import sys
 import threading
 
-from . import VERSION, bluetooth, check, config, history, levels, shairport, spotify, status, updates
+from . import VERSION, bluetooth, check, config, history, levels, mqtt, shairport, spotify, status, updates
 from .server import Handler, Server
 
 log = logging.getLogger('nowplaying')
@@ -59,6 +59,12 @@ def main():
     if status.BLUETOOTH:
         threading.Thread(target=bluetooth.follow, args=(status.BLUETOOTH, status.publish_status, log),
                          name='bluetooth', daemon=True).start()
+    if config.MQTT_HOST:
+        status.MQTT = mqtt.Client(config.MQTT_HOST, config.MQTT_PORT, config.MQTT_TLS, config.MQTT_USER,
+                                  config.MQTT_PASSWORD, config.MQTT_TOPIC, config.MQTT_DISCOVERY, config.PUBLIC_URL,
+                                  'https' if server.tls else 'http', config.PORT,
+                                  lambda: status.status_or_error()[0], log)
+        threading.Thread(target=status.MQTT.run, name='mqtt', daemon=True).start()
     if config.UPDATE_CHECK:
         threading.Thread(target=updates.watch, name='version-check', daemon=True).start()
     server.serve_forever()

@@ -86,3 +86,18 @@ SCROBBLE_SOURCES = [s.strip() for s in os.environ.get('SCROBBLE_SOURCES', 'mpd,a
 
 # Once a day, ask GitHub whether a newer version is out (updates.py)
 UPDATE_CHECK = _on('UPDATE_CHECK')
+
+# Home Assistant, through an MQTT broker (mqtt.py); no host: off
+MQTT_HOST = os.environ.get('MQTT_HOST', '').strip()
+MQTT_TLS = os.environ.get('MQTT_TLS', '').strip().lower() in ('1', 'true', 'yes', 'on')
+MQTT_PORT = int(os.environ.get('MQTT_PORT', '').strip() or (8883 if MQTT_TLS else 1883))
+MQTT_USER = os.environ.get('MQTT_USER', '').strip()
+MQTT_PASSWORD = os.environ.get('MQTT_PASSWORD', '')
+MQTT_TOPIC = os.environ.get('MQTT_TOPIC', '').strip().strip('/') or 'nowplaying'
+# Home Assistant's discovery prefix; 0 turns discovery off
+MQTT_DISCOVERY = os.environ.get('MQTT_DISCOVERY', 'homeassistant').strip().strip('/')
+if MQTT_DISCOVERY.lower() in ('0', 'false', 'no', 'off'):
+    MQTT_DISCOVERY = ''
+# The bridge's address as others reach it (artwork for Home Assistant);
+# empty: guessed
+PUBLIC_URL = os.environ.get('PUBLIC_URL', '').strip().rstrip('/')

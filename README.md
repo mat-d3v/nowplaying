@@ -44,6 +44,7 @@ No nginx and no Python packages required - the bridge only uses the standard lib
 - Clear messages when mpd is unreachable or needs a password, and an offline indicator when the bridge stops responding
 - English and French, following the browser's language
 - Listening history: what played, by day, whatever the player; scrobbling to ListenBrainz or Last.fm, as an option
+- Home Assistant: what's playing, its quality and its artwork, over MQTT; the entities show up by themselves
 - A settings page for your phone: language, clock, background, size, VU meters... with a preview; saved, every screen shows them at once
 - Fits any screen, from 800×480 to 4K: small screens shrink the layout so the text keeps its room, big ones grow it
 - Upright screens (a TV on its side, the Raspberry Pi Touch Display 2, phones): artwork on top, text below
@@ -125,6 +126,13 @@ Settings come from environment variables or from a `.env` file next to `mpd-brid
 | LASTFM_API_SECRET, LASTFM_SESSION_KEY | empty (off) | Scrobbling to Last.fm, with `LASTFM_API_KEY`, see [below](#listening-history) |
 | SCROBBLE_SOURCES | mpd,airplay,bluetooth | What gets scrobbled: `mpd`, `airplay`, `bluetooth`, `spotify` |
 | SETTINGS_PAGE | 1 (on) | The settings page; `0` turns it off (saved settings still apply) |
+| MQTT_HOST | empty (off) | MQTT broker: what's playing, for Home Assistant, see [Home Assistant](#home-assistant-mqtt) |
+| MQTT_PORT | 1883 (8883 with TLS) | Port of the broker |
+| MQTT_USER, MQTT_PASSWORD | empty | User name and password on the broker |
+| MQTT_TLS | 0 | `1`: TLS to the broker, its certificate checked |
+| MQTT_TOPIC | nowplaying | Where the bridge publishes; with several bridges, one each |
+| MQTT_DISCOVERY | homeassistant | Home Assistant's discovery prefix; `0` turns discovery off |
+| PUBLIC_URL | guessed | The bridge's address as Home Assistant reaches it, for the artwork, e.g. `http://192.168.1.20:8766` |
 | UPDATE_CHECK | 1 (on) | Once a day, asks GitHub for the latest release: the settings page, the log and `--check` say when a newer version is out. Nothing else is sent; `0` turns it off |
 | DEMO | empty | `1` for the demo mode: made-up tracks, no mpd needed |
 
@@ -192,6 +200,25 @@ sudo usermod -aG bluetooth "$USER"
 ```
 
 `--check` says what BlueZ answers, and `BLUETOOTH=0` turns Bluetooth off. Headphones or speakers this machine plays to don't count: what they play is mpd's. Not available with Docker, which has no access to the machine's Bluetooth.
+
+## Home Assistant (MQTT)
+
+With an MQTT broker (Home Assistant's Mosquitto add-on, or any other), the bridge publishes what's playing for Home Assistant. Set the broker in `.env`, then restart the bridge:
+
+```
+MQTT_HOST=192.168.1.10
+MQTT_USER=nowplaying
+MQTT_PASSWORD=...
+```
+
+Home Assistant finds it by itself (MQTT discovery): a "Now Playing" device with the title, artist, album, source (`mpd`, `airplay`, `spotify`, `bluetooth`), quality (`FLAC · 24bit / 96.0 kHz · Hi-Res`) and state, a "Playing" sensor for automations, and the artwork as an image. The title sensor carries the rest as attributes (duration, elapsed time, sender, station, badges...). On a dashboard, for instance:
+
+```yaml
+type: picture-entity
+entity: image.now_playing_artwork
+```
+
+Home Assistant fetches the artwork from the bridge: the bridge gives its address on the network, or `PUBLIC_URL` when Home Assistant reaches it another way (a name, a proxy). Other home automation systems can use the same topics: `nowplaying/state` (JSON), `nowplaying/artwork` (an address) and `nowplaying/availability` (`online`, or `offline` once the bridge is gone). `--check` tries the broker; `MQTT_TLS=1` connects with TLS, `MQTT_DISCOVERY=0` leaves Home Assistant's discovery out.
 
 ## Listening history
 

@@ -44,6 +44,7 @@ Ni nginx ni paquet Python à installer - le pont n'utilise que la bibliothèque 
 - Messages clairs quand mpd est injoignable ou demande un mot de passe, et indicateur « hors ligne » si le pont ne répond plus
 - Anglais et français, selon la langue du navigateur
 - Historique d'écoute : ce qui a été joué, par jour, quel que soit le lecteur ; envoi à ListenBrainz ou Last.fm (scrobbling) en option
+- Home Assistant : ce qui joue, sa qualité et sa pochette, via MQTT ; les entités apparaissent d'elles-mêmes
 - Une page de réglages pour votre téléphone : langue, horloge, fond, taille, VU-mètres... avec un aperçu ; enregistrés, tous les écrans les affichent aussitôt
 - S'adapte à tout écran, du 800×480 à la 4K : sur un petit écran, l'affichage se réduit pour laisser sa place au texte ; sur un grand, il s'agrandit
 - Écrans verticaux (une TV posée sur le côté, le Raspberry Pi Touch Display 2, les téléphones) : pochette en haut, texte en dessous
@@ -125,6 +126,13 @@ Les réglages viennent des variables d'environnement ou d'un fichier `.env` plac
 | LASTFM_API_SECRET, LASTFM_SESSION_KEY | vide (désactivé) | Scrobbling vers Last.fm, avec `LASTFM_API_KEY`, voir [plus bas](#historique-découte) |
 | SCROBBLE_SOURCES | mpd,airplay,bluetooth | Ce qui est scrobblé : `mpd`, `airplay`, `bluetooth`, `spotify` |
 | SETTINGS_PAGE | 1 (activé) | La page de réglages ; `0` la coupe (les réglages enregistrés s'appliquent toujours) |
+| MQTT_HOST | vide (désactivé) | Broker MQTT : ce qui joue, pour Home Assistant, voir [Home Assistant](#home-assistant-mqtt) |
+| MQTT_PORT | 1883 (8883 avec TLS) | Port du broker |
+| MQTT_USER, MQTT_PASSWORD | vide | Nom d'utilisateur et mot de passe sur le broker |
+| MQTT_TLS | 0 | `1` : TLS vers le broker, son certificat vérifié |
+| MQTT_TOPIC | nowplaying | Où le pont publie ; avec plusieurs ponts, un chacun |
+| MQTT_DISCOVERY | homeassistant | Préfixe de découverte de Home Assistant ; `0` coupe la découverte |
+| PUBLIC_URL | devinée | L'adresse du pont telle que Home Assistant la joint, pour la pochette, par ex. `http://192.168.1.20:8766` |
 | UPDATE_CHECK | 1 (activé) | Une fois par jour, demande à GitHub la dernière version publiée : la page de réglages, le journal et `--check` signalent une version plus récente. Rien d'autre n'est envoyé ; `0` désactive |
 | DEMO | vide | `1` pour le mode démo : morceaux inventés, sans mpd |
 
@@ -192,6 +200,25 @@ sudo usermod -aG bluetooth "$USER"
 ```
 
 `--check` indique ce que répond BlueZ, et `BLUETOOTH=0` coupe le Bluetooth. Les casques ou enceintes vers lesquels joue cette machine ne comptent pas : ce qu'ils jouent, c'est mpd. Indisponible avec Docker, qui n'a pas accès au Bluetooth de la machine.
+
+## Home Assistant (MQTT)
+
+Avec un broker MQTT (le module complémentaire Mosquitto de Home Assistant, ou un autre), le pont publie ce qui joue pour Home Assistant. Indiquez le broker dans `.env`, puis redémarrez le pont :
+
+```
+MQTT_HOST=192.168.1.10
+MQTT_USER=nowplaying
+MQTT_PASSWORD=...
+```
+
+Home Assistant le trouve tout seul (découverte MQTT) : un appareil « Now Playing » avec le titre, l'artiste, l'album, la source (`mpd`, `airplay`, `spotify`, `bluetooth`), la qualité (`FLAC · 24bit / 96.0 kHz · Hi-Res`) et l'état, un capteur « Playing » pour les automatisations, et la pochette en image. Le capteur du titre porte le reste en attributs (durée, temps écoulé, appareil, station, badges...). Sur un tableau de bord, par exemple :
+
+```yaml
+type: picture-entity
+entity: image.now_playing_artwork
+```
+
+Home Assistant va chercher la pochette auprès du pont : le pont donne son adresse sur le réseau, ou `PUBLIC_URL` quand Home Assistant le joint autrement (un nom, un proxy). D'autres solutions domotiques peuvent lire les mêmes topics : `nowplaying/state` (JSON), `nowplaying/artwork` (une adresse) et `nowplaying/availability` (`online`, ou `offline` une fois le pont parti). `--check` essaie le broker ; `MQTT_TLS=1` se connecte en TLS, `MQTT_DISCOVERY=0` laisse de côté la découverte de Home Assistant.
 
 ## Historique d'écoute
 

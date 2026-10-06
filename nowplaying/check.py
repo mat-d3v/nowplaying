@@ -12,7 +12,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from . import VERSION, artwork, bluetooth, config, history, mpd, status, updates
+from . import VERSION, artwork, bluetooth, config, history, mpd, mqtt, status, updates
 from .audio import describe_badges, display_title, get_alsa_format, get_audio_format, get_codec
 
 RASPOTIFY_CONF = '/etc/raspotify/conf'  # raspotify's settings for librespot
@@ -209,10 +209,27 @@ def check():
     else:
         report('--', 'Last.fm artwork fallback: off (no LASTFM_API_KEY)')
 
+    check_mqtt(report)
     check_version(report)
 
     print('\n' + ('No problem found.' if not problems else f'{problems} problem(s) to fix.'))
     return 1 if problems else 0
+
+
+def check_mqtt(report):
+    if not config.MQTT_HOST:
+        report('--', 'Home Assistant (MQTT): off (no MQTT_HOST)')
+        return
+    where = f'{config.MQTT_HOST}:{config.MQTT_PORT}' + (' (TLS)' if config.MQTT_TLS else '')
+    problem = mqtt.check(config.MQTT_HOST, config.MQTT_PORT, config.MQTT_TLS, config.MQTT_USER, config.MQTT_PASSWORD,
+                         f'nowplaying-check-{os.getpid()}')
+    if problem:
+        report('FAIL', f'MQTT broker at {where}: {problem}',
+               'Check MQTT_HOST, MQTT_PORT, MQTT_USER and MQTT_PASSWORD (and MQTT_TLS)')
+        return
+    discovery = (f'Home Assistant finds it ({config.MQTT_DISCOVERY}/...)' if config.MQTT_DISCOVERY
+                 else 'no Home Assistant discovery')
+    report('ok', f'MQTT broker at {where}: publishing to {config.MQTT_TOPIC}/, {discovery}')
 
 
 def check_version(report):
