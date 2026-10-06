@@ -26,7 +26,7 @@ from fake_mpd import GRAY_PNG, FakeMPD  # noqa: E402
 import fake_fifo  # noqa: E402
 import fake_shairport  # noqa: E402
 import nowplaying  # noqa: E402
-from nowplaying import artwork, audio, check, config, demo, display, mpd, status, updates  # noqa: E402
+from nowplaying import artwork, audio, check, config, demo, display, mpd, shairport, status, updates  # noqa: E402
 
 
 class CodecTest(unittest.TestCase):
@@ -651,6 +651,47 @@ class AirPlayBridgeTest(BridgeTestCase):
         self.assertIn('AirPlay: shairport-sync metadata pipe at', out)
         code, out = run_check(self.mpd.port, SHAIRPORT_PIPE=self.pipe + '-missing')
         self.assertIn('AirPlay: no shairport-sync metadata pipe at', out)
+
+
+class AirPlayArtworkTest(unittest.TestCase):
+    # What's played over AirPlay without a cover: artwork from iTunes, once
+    # the cover had time to come
+    def setUp(self):
+        self.airplay = shairport.AirPlay()
+        self.title = f'Pier {time.time()}'  # a lookup of its own
+        search = mock.Mock(return_value=[album('Night Ferries', 'June Avenue', 'ferries')])
+        for patcher in (mock.patch.multiple(status, AIRPLAY=self.airplay, OTHER_PLAYERS=[self.airplay]),
+                        mock.patch.multiple(config, ITUNES_ENABLED=True, LASTFM_ENABLED=False),
+                        mock.patch.object(artwork, 'itunes_search', search)):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def send(self, data):
+        for it in shairport.parse_items(data)[0]:
+            self.airplay.handle(*it)
+
+    def art(self):
+        return status.status_or_error()[0]['art_url']
+
+    def test_sender_says_none(self):
+        self.send(fake_shairport.item('ssnc', 'pbeg')
+                  + fake_shairport.track(self.title, 'June Avenue', 'Night Ferries', cover=b''))
+        self.assertEqual(self.art(), '')  # looking
+        wait_until(lambda: self.art() == 'https://is1.example/ferries/600x600bb.jpg')
+
+    def test_sender_says_nothing(self):
+        with mock.patch.object(shairport, 'COVER_WAIT', 0.3), mock.patch.object(status, 'publish_status') as published:
+            self.send(fake_shairport.item('ssnc', 'pbeg')
+                      + fake_shairport.track(self.title, 'June Avenue', 'Night Ferries', cover=None))
+            self.assertEqual(self.art(), '')  # its cover may still come
+            artwork.itunes_search.assert_not_called()
+            wait_until(lambda: published.called)  # the wait is over: the page asks again
+        wait_until(lambda: self.art() == 'https://is1.example/ferries/600x600bb.jpg')
+
+    def test_cover_from_the_sender(self):
+        self.send(fake_shairport.SCENARIOS['play'])
+        self.assertTrue(self.art().startswith('/art?airplay='))
+        artwork.itunes_search.assert_not_called()
 
 
 @unittest.skipUnless(hasattr(os, 'mkfifo'), 'needs named pipes')

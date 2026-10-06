@@ -149,7 +149,7 @@ Depuis un clone de ce dépôt, `docker compose up -d` lance le pont depuis le do
 
 ## AirPlay (shairport-sync)
 
-Quand [shairport-sync](https://github.com/mikebrady/shairport-sync) tourne sur la même machine, la page affiche aussi ce qui est joué en AirPlay : titre, artiste, album, pochette, progression, et l'appareil qui diffuse. AirPlay passe en premier pendant la lecture ; en pause, si mpd joue, c'est mpd qui s'affiche ; quand AirPlay s'arrête, mpd revient.
+Quand [shairport-sync](https://github.com/mikebrady/shairport-sync) tourne sur la même machine, la page affiche aussi ce qui est joué en AirPlay : titre, artiste, album, pochette, progression, et l'appareil qui diffuse. AirPlay passe en premier pendant la lecture ; en pause, si mpd joue, c'est mpd qui s'affiche ; quand AirPlay s'arrête, mpd revient. Quand l'application qui joue ne donne pas de pochette (certaines applis de radio, certaines applis Android), elle est cherchée en ligne, comme pour les radios.
 
 Dans `/etc/shairport-sync.conf`, activez les métadonnées (décommentez ces lignes dans sa section `metadata`), puis redémarrez-le avec `sudo systemctl restart shairport-sync` :
 

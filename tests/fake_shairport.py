@@ -36,15 +36,16 @@ def _png(rgb, size=64):
 COVER = _png((200, 80, 40))
 
 
-def track(title, artist, album, seconds=200, elapsed=30, rate=44100):
+def track(title, artist, album, seconds=200, elapsed=30, rate=44100, cover=COVER):
     # What shairport-sync sends when a track starts: the metadata bundle,
-    # the cover, then the progress (RTP timestamps start/current/end)
+    # the cover, then the progress (RTP timestamps start/current/end).
+    # cover=b'': the sender says there's none; None: it says nothing
     start = 1_000_000
     return (item('ssnc', 'mdst')
             + item('core', 'minm', title) + item('core', 'asar', artist) + item('core', 'asal', album)
             + item('core', 'astm', (seconds * 1000).to_bytes(4, 'big'))
             + item('ssnc', 'mden')
-            + item('ssnc', 'pcst') + item('ssnc', 'PICT', COVER) + item('ssnc', 'pcen')
+            + (item('ssnc', 'pcst') + item('ssnc', 'PICT', cover) + item('ssnc', 'pcen') if cover is not None else b'')
             + item('ssnc', 'prgr', f'{start}/{start + elapsed * rate}/{start + seconds * rate}'))
 
 

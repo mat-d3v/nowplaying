@@ -101,6 +101,34 @@ class AirPlayTest(unittest.TestCase):
         feed(self.airplay, track('T', 'A', 'B'))
         self.assertEqual(self.airplay.status()['state'], 'play')
 
+    def test_cover_wanted(self):
+        # A cover: nothing to look for online
+        feed(self.airplay, SCENARIOS['play'])
+        self.assertIsNone(self.airplay.cover_wanted())
+        # None from the sender: wait for it a little, then look online
+        with mock.patch('time.monotonic', return_value=1000.0):
+            feed(self.airplay, item('ssnc', 'pend') + track('Pier', 'June Avenue', 'Night Ferries', cover=None))
+            self.assertEqual(self.airplay.cover_wanted(), (shairport.COVER_WAIT, 'June Avenue', 'Pier', 'Night Ferries'))
+        with mock.patch('time.monotonic', return_value=1000.0 + shairport.COVER_WAIT + 1):
+            self.assertEqual(self.airplay.cover_wanted()[0], 0)
+        # The cover comes after all
+        feed(self.airplay, item('ssnc', 'PICT', COVER))
+        self.assertIsNone(self.airplay.cover_wanted())
+
+    def test_sender_says_no_cover(self):
+        # iOS sends an empty picture ("image/none"): no need to wait
+        feed(self.airplay, item('ssnc', 'pbeg') + track('Pier', 'June Avenue', 'Night Ferries', cover=b''))
+        self.assertEqual(self.airplay.cover_wanted(), (0, 'June Avenue', 'Pier', 'Night Ferries'))
+        # ...until the next track, whose cover may still come
+        feed(self.airplay, track('Second Wind', 'June Avenue', 'Night Ferries', cover=None))
+        self.assertGreater(self.airplay.cover_wanted()[0], 0)
+
+    def test_no_cover_to_look_for(self):
+        feed(self.airplay, item('ssnc', 'pbeg') + track('', 'June Avenue', 'Night Ferries', cover=b''))
+        self.assertIsNone(self.airplay.cover_wanted())  # no title
+        feed(self.airplay, item('ssnc', 'pend'))
+        self.assertIsNone(self.airplay.cover_wanted())  # no session
+
     def test_without_metadata(self):
         # e.g. a Mac sending its sound: the sender stands in for the track
         feed(self.airplay, item('ssnc', 'snam', 'Office Mac') + item('ssnc', 'pbeg'))

@@ -43,6 +43,7 @@ def parse_items(buffer):
 
 
 TRACK_FIELDS = {'minm': 'title', 'asar': 'artist', 'asal': 'album'}
+COVER_WAIT = 3  # seconds for a track's cover to come, before the bridge looks online
 
 
 class AirPlay:
@@ -62,6 +63,14 @@ class AirPlay:
         self.duration_ms = 0
         self.picture = None
         self.elapsed, self.duration, self.since = 0.0, 0.0, None
+        self.track_at = self.picture_at = None  # when the track's metadata, and the last cover, came
+
+    def _track(self):
+        return self.title, self.artist, self.album
+
+    def _changed_track(self, before):
+        if self._track() != before:
+            self.track_at = time.monotonic()
 
     def _now_elapsed(self):
         elapsed = self.elapsed
@@ -88,7 +97,9 @@ class AirPlay:
                 if self._pending is not None:
                     self._pending[TRACK_FIELDS[code]] = value
                     return False
+                before = self._track()
                 setattr(self, TRACK_FIELDS[code], value)
+                self._changed_track(before)
                 self._start()
                 return True
             if code == 'astm' and len(data) == 4:  # duration, in milliseconds
@@ -101,14 +112,17 @@ class AirPlay:
             return False
         if code == 'mden':      # ...and ends: apply it all at once
             if self._pending:
+                before = self._track()
                 for field, value in self._pending.items():
                     setattr(self, field, value)
+                self._changed_track(before)
             self._pending = None
             self._start()
             return True
         if code == 'PICT':      # the cover (JPEG or PNG), or none
             self.picture = data or None
             self.picture_id += 1
+            self.picture_at = time.monotonic()
             self._start()
             return True
         if code == 'prgr':      # progress: RTP timestamps "start/current/end"
@@ -173,6 +187,20 @@ class AirPlay:
     def cover(self):
         with self.lock:
             return self.picture
+
+    def cover_wanted(self):
+        # A track its sender gives no cover for (radio apps, some Android
+        # apps...): (seconds still to wait for one, artist, title, album),
+        # for the bridge to look online once the wait is over. None when
+        # there's a cover, or nothing to look for
+        with self.lock:
+            if not self.session or self.picture or not (self.artist and self.title) or self.track_at is None:
+                return None
+            if self.picture_at is not None and self.picture_at >= self.track_at:
+                wait = 0.0  # the sender said there's none ("image/none")
+            else:
+                wait = max(0.0, self.track_at + COVER_WAIT - time.monotonic())
+            return wait, self.artist, self.title, self.album
 
 
 def follow(path, airplay, on_change, log):

@@ -5,6 +5,7 @@
 ### Added
 
 - The settings page shows the version running, and when a newer one is out, with a link to what's new: once a day the bridge asks GitHub for its latest release (nothing else is sent; `UPDATE_CHECK=0` turns it off). The log and `--check` say so too.
+- AirPlay: when the app playing gives no cover (some radio apps, some Android apps), the artwork is looked up online (iTunes, or Last.fm with a key), as for radios. The bridge first gives the cover 3 seconds to come, so no other artwork flashes by; when the sender says it has none, it looks at once.
 
 ### Changed
 

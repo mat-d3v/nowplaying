@@ -106,10 +106,46 @@ PROBLEMS = {'mpd_unreachable': 'unreachable', 'mpd_password': 'refused access (c
             'mpd_error': 'answered with an error'}
 
 
+def player_status(player):
+    data = player.status()
+    if data and player is AIRPLAY and not data['art_url']:
+        data['art_url'] = airplay_artwork()
+    return data
+
+
+_cover_timer = None  # pushes the status again once AirPlay's cover had time to come
+_cover_lock = threading.Lock()
+
+
+def airplay_artwork():
+    # Online artwork for what's played over AirPlay without a cover, once
+    # the cover had time to come: no other artwork flashing by first
+    global _cover_timer
+    wanted = AIRPLAY.cover_wanted()
+    if not wanted:
+        return ''
+    wait, artist, title, album = wanted
+    if wait:
+        with _cover_lock:
+            if _cover_timer is None:
+                _cover_timer = threading.Timer(wait + 0.05, _cover_wait_over)
+                _cover_timer.daemon = True
+                _cover_timer.start()
+        return ''
+    return artwork.for_track(artist, title, album)
+
+
+def _cover_wait_over():
+    global _cover_timer
+    with _cover_lock:
+        _cover_timer = None
+    publish_status()
+
+
 def other_players():
     # What AirPlay and Spotify are up to: (playing, paused) payloads, the
     # one that started playing last first
-    found = sorted(((player.started, data) for player in OTHER_PLAYERS for data in [player.status()] if data),
+    found = sorted(((player.started, data) for player in OTHER_PLAYERS for data in [player_status(player)] if data),
                    key=lambda found: found[0], reverse=True)
     return ([data for _, data in found if data['state'] == 'play'],
             [data for _, data in found if data['state'] != 'play'])
