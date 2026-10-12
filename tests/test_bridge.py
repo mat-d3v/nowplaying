@@ -391,12 +391,13 @@ class StatusTest(BridgeTestCase):
     def test_static_routes(self):
         b = self.start_bridge()
         for path in ('/', '/index.html', '/index.fr.html', '/?lang=fr', '/hires.svg', '/manifest.webmanifest',
-                     '/icon-192.png', '/icon-512.png', '/touch-icon-v2.png', '/apple-touch-icon.png'):
+                     '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png'):
             with self.subTest(path=path):
                 self.assertEqual(b.get(path)[0], 200)
         self.assertEqual(b.get('/nope')[0], 404)
-        # The home screen icon is in the page itself: nothing for iOS to download
-        self.assertIn('rel="apple-touch-icon" href="data:image/png;base64,', b.get('/')[2].decode())
+        for path in ('/touch-icon-v3.png', '/apple-touch-icon-precomposed.png'):  # the home screen icon
+            with self.subTest(path=path):
+                self.assertEqual(b.get(path)[:2][0], 200)
 
     def test_version(self):
         b = self.start_bridge()

@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- iOS: the icon of the page added to the home screen could stay grey over HTTPS with a local certificate (mkcert's): iOS downloads that icon without trusting such a certificate. The icon is now inside the page itself, with nothing to download.
+- iOS: the icon of the page added to the home screen is bigger, and has a new address, so iOS doesn't keep the old one. The settings and history pages have it too, and it is also at the addresses iOS looks for by itself (`/apple-touch-icon.png`).
 
 ## 1.2.0 - 2026-10-06
 

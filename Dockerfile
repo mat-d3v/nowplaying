@@ -10,7 +10,7 @@ WORKDIR /app
 COPY mpd-bridge.py spotify-event.py index.html settings.html history.html hires.svg manifest.webmanifest ./
 COPY nowplaying/*.py nowplaying/
 RUN python3 -m compileall -q nowplaying
-COPY assets/icon-192.png assets/logo.png assets/apple-touch-icon.png assets/touch-icon-v2.png assets/
+COPY assets/icon-192.png assets/logo.png assets/touch-icon-v3.png assets/
 
 # Not as root; what it saves (display settings, listening history) in /data
 RUN adduser -S -D -H -u 10001 nowplaying \

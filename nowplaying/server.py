@@ -8,7 +8,6 @@
     /version            this version, and a newer one if there is
     /spotify            librespot's events (POST, from this machine only)
 """
-import base64
 import ipaddress
 import json
 import logging
@@ -23,14 +22,18 @@ log = logging.getLogger('nowplaying')
 
 PAGE = ('index.html', 'text/html; charset=utf-8')
 SETTINGS_PAGE = ('settings.html', 'text/html; charset=utf-8')
+TOUCH_ICON = ('assets/touch-icon-v3.png', 'image/png')
 STATIC_FILES = {
     '/': PAGE,
     '/index.html': PAGE,
     # Same page: it switches to French from this path (or ?lang=fr)
     '/index.fr.html': PAGE,
     '/hires.svg': ('hires.svg', 'image/svg+xml'),
-    '/apple-touch-icon.png': ('assets/apple-touch-icon.png', 'image/png'),
-    '/touch-icon-v2.png': ('assets/touch-icon-v2.png', 'image/png'),
+    # The home screen icon: a new name each time it changes, since iOS keeps
+    # the old one; the usual names too, which iOS asks for by itself
+    '/touch-icon-v3.png': TOUCH_ICON,
+    '/apple-touch-icon.png': TOUCH_ICON,
+    '/apple-touch-icon-precomposed.png': TOUCH_ICON,
     '/manifest.webmanifest': ('manifest.webmanifest', 'application/manifest+json'),
     '/icon-192.png': ('assets/icon-192.png', 'image/png'),
     '/icon-512.png': ('assets/logo.png', 'image/png'),
@@ -39,19 +42,6 @@ STATIC_FILES = {
 }
 
 _spotify_seen = False  # logged once, on librespot's first event
-_touch_icon = None
-
-
-def touch_icon():
-    # The home screen icon as a data: URL, inside the page itself: iOS then has
-    # nothing to download when the page is added to the home screen, so a
-    # certificate it won't trust for that download (a local CA such as
-    # mkcert's) can't leave a grey icon. Read once
-    global _touch_icon
-    if _touch_icon is None:
-        with open(os.path.join(config.SCRIPT_DIR, 'assets', 'touch-icon-v2.png'), 'rb') as f:
-            _touch_icon = 'data:image/png;base64,' + base64.b64encode(f.read()).decode()
-    return _touch_icon
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -160,7 +150,6 @@ class Handler(BaseHTTPRequestHandler):
             # from the start (<, written <, can't end the script)
             saved = json.dumps(display.load()).replace('<', '\\u003c')
             data = data.replace(b'/*display-settings*/null', saved.encode(), 1)
-            data = data.replace(b'href="/touch-icon-v2.png"', f'href="{touch_icon()}"'.encode(), 1)
         if content_type.startswith('text/html'):
             self.send(200, data, content_type, Cache_Control='no-cache')
         else:
