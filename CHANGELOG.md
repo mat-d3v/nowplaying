@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- iOS: the icon of the page added to the home screen could stay grey over HTTPS with a local certificate (mkcert's): iOS downloads that icon without trusting such a certificate. The icon is now inside the page itself, with nothing to download.
+
 ## 1.2.0 - 2026-10-06
 
 ### Added

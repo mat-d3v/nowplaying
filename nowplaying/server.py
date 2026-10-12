@@ -8,6 +8,7 @@
     /version            this version, and a newer one if there is
     /spotify            librespot's events (POST, from this machine only)
 """
+import base64
 import ipaddress
 import json
 import logging
@@ -38,6 +39,19 @@ STATIC_FILES = {
 }
 
 _spotify_seen = False  # logged once, on librespot's first event
+_touch_icon = None
+
+
+def touch_icon():
+    # The home screen icon as a data: URL, inside the page itself: iOS then has
+    # nothing to download when the page is added to the home screen, so a
+    # certificate it won't trust for that download (a local CA such as
+    # mkcert's) can't leave a grey icon. Read once
+    global _touch_icon
+    if _touch_icon is None:
+        with open(os.path.join(config.SCRIPT_DIR, 'assets', 'touch-icon-v2.png'), 'rb') as f:
+            _touch_icon = 'data:image/png;base64,' + base64.b64encode(f.read()).decode()
+    return _touch_icon
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -146,6 +160,7 @@ class Handler(BaseHTTPRequestHandler):
             # from the start (<, written <, can't end the script)
             saved = json.dumps(display.load()).replace('<', '\\u003c')
             data = data.replace(b'/*display-settings*/null', saved.encode(), 1)
+            data = data.replace(b'href="/touch-icon-v2.png"', f'href="{touch_icon()}"'.encode(), 1)
         if content_type.startswith('text/html'):
             self.send(200, data, content_type, Cache_Control='no-cache')
         else:
