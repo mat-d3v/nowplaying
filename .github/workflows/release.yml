@@ -64,7 +64,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
       - name: Build and push (PCs, 64 and 32-bit Raspberry Pis)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64,linux/arm/v7
